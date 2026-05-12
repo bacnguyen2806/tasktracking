@@ -501,13 +501,22 @@ function renderOverview(){
   const{from,to}=getDateRange();
   const prev=document.getElementById('memberFilter').value;
 
-  // Collect children
+  // Collect sub-jobs (for format counts, task pills, booked from sub-job assignee)
   let allC=[];
-  jobs.filter(j=>j.status!=='closed'||true).forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
-    if(c.name||c.assignee)allC.push({...c,jobName:j.tabTitle,jobId:j.id});
+  jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
+    if(c.name||c.assignee)allC.push({...c,jobName:j.tabTitle,jobId:j.id,_type:'child'});
   })));
 
-  const inRange=allC.filter(c=>taskInRange(c,from,to));
+  // Collect sub-tasks separately (for tasks count, hours, rating — by subtask assignee)
+  let allST=[];
+  jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
+    (c.subtasks||[]).forEach(s=>{
+      if(s.name||s.assignee)allST.push({...s,jobName:j.tabTitle,jobId:j.id,parentFormat:c.format,_type:'subtask'});
+    });
+  })));
+
+  const inRange   = allC.filter(c=>taskInRange(c,from,to));
+  const stInRange = allST.filter(s=>taskInRange(s,from,to));
 
   // Rebuild member select
   const sel=document.getElementById('memberFilter');
@@ -515,13 +524,14 @@ function renderOverview(){
     members.map(m=>`<option value="${m.id}" ${m.id===prev?'selected':''}>${m.name}</option>`).join('');
   const mf=sel.value;
 
-  const filtered=mf!=='all'?inRange.filter(c=>c.assignee===mf):inRange;
+  const filtered   = mf!=='all' ? inRange.filter(c=>c.assignee===mf)   : inRange;
+  const stFiltered = mf!=='all' ? stInRange.filter(s=>s.assignee===mf) : stInRange;
 
-  // Totals
-  let tt=filtered.length,tHrs=0,tE=0,tO=0,tL=0;
-  filtered.forEach(c=>{
-    tHrs+=parseFloat(c.hours)||0;
-    const r=calcRating(c.deadlineInternal,c.deadlineAccount);
+  // Totals: tasks = sub-tasks count; hours = sum of sub-task hours; rating from sub-tasks
+  let tt=stFiltered.length, tHrs=0, tE=0, tO=0, tL=0;
+  stFiltered.forEach(s=>{
+    tHrs+=parseFloat(s.hours)||0;
+    const r=calcRating(s.deadlineInternal,s.deadlineAccount);
     if(r==='Earlier')tE++;else if(r==='On-time')tO++;else if(r==='Late')tL++;
   });
 
@@ -533,11 +543,15 @@ function renderOverview(){
     <div class="summary-card"><div class="lbl">Late</div><div class="val" style="color:var(--red)">${tL}</div></div>`;
 
   const tbody=document.getElementById('overviewBody');
-  // group by member
+  // group by member — include any member with sub-jobs OR sub-tasks in range
   const byMem={};
   const showMembers=mf!=='all'?members.filter(m=>m.id===mf):members;
-  showMembers.forEach(m=>{byMem[m.id]={member:m,tasks:filtered.filter(c=>c.assignee===m.id)}});
-  // unassigned
+  showMembers.forEach(m=>{
+    const hasTasks = filtered.some(c=>c.assignee===m.id);
+    const hasSTs   = stFiltered.some(s=>s.assignee===m.id);
+    if(hasTasks||hasSTs) byMem[m.id]={member:m,tasks:filtered.filter(c=>c.assignee===m.id)};
+  });
+  // unassigned sub-jobs
   const unassigned=filtered.filter(c=>!c.assignee||!members.find(m=>m.id===c.assignee));
   if(unassigned.length) byMem['_unassigned']={member:{id:'_unassigned',name:'(Unassigned)'},tasks:unassigned};
 
@@ -547,15 +561,18 @@ function renderOverview(){
   }
 
   tbody.innerHTML=Object.values(byMem).map(({member,tasks})=>{
-    const hrs=tasks.reduce((s,c)=>s+(parseFloat(c.hours)||0),0);
-    const doHrs=from&&to?dayoffInRange(member.id,from,to):0;
-    const free=from&&to?calcFreeHours(member.id,from,to,hrs):0;
-    const earlier=tasks.filter(c=>calcRating(c.deadlineInternal,c.deadlineAccount)==='Earlier').length;
-    const ontime=tasks.filter(c=>calcRating(c.deadlineInternal,c.deadlineAccount)==='On-time').length;
-    const late=tasks.filter(c=>calcRating(c.deadlineInternal,c.deadlineAccount)==='Late').length;
-    // format counts — based on sub-job format, attributed to sub-job assignee (not sub-tasks)
+    // sub-tasks for this member (tasks count, hours, rating)
+    const mySTs = stFiltered.filter(s=>s.assignee===member.id);
+    const hrs   = mySTs.reduce((s,x)=>s+(parseFloat(x.hours)||0),0);
+    const doHrs = from&&to?dayoffInRange(member.id,from,to):0;
+    const free  = from&&to?calcFreeHours(member.id,from,to,hrs):0;
+    const earlier = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Earlier').length;
+    const ontime  = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='On-time').length;
+    const late    = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Late').length;
+    // format counts — sub-job format attributed to sub-job assignee
     const fc={};
     ['Key Visual','Single','Multi','Video','Set Banners'].forEach(f=>{fc[f]=tasks.filter(c=>c.format===f).length});
+    // task pills from sub-jobs (for display)
     const taskPills=tasks.map(c=>`<span class="task-pill">${c.name||c.jobName}</span>`).join('');
     const initials=getInitials(member.name);
 
@@ -896,32 +913,51 @@ function childRowHTML(jobId,motherId,child,idx){
 function subtaskHTML(motherId,childId,s){
   const rating=calcRating(s.deadlineInternal,s.deadlineAccount);
   const bc=rating==='Earlier'?'bg-green':rating==='On-time'?'bg-amber':rating==='Late'?'bg-red':'';
-  return`<div class="st-row" id="st-${s.id}" style="flex-wrap:wrap;gap:5px;padding:5px 0">
-    <input class="st-name" style="min-width:120px;flex:2" value="${s.name}" placeholder="Sub-task…" oninput="updateSubtask('${motherId}','${childId}','${s.id}','name',this.value)">
-    <div class="asgn-wrap" style="flex:1;min-width:100px">
-      <input class="ci" style="font-size:11px" id="stai-${s.id}" value="${memberNameById(s.assignee)}"
-        placeholder="Assignee…"
-        oninput="onStAssigneeInput('${motherId}','${childId}','${s.id}',this.value)"
-        onfocus="showStAD('${s.id}')" onblur="hideStAD('${s.id}')" autocomplete="off">
-      <div class="asgn-dd" id="stad-${s.id}"></div>
-    </div>
-    <input class="ci" type="date" style="font-size:11px;min-width:110px" value="${s.receiveDate||''}"
-      onchange="updateSubtask('${motherId}','${childId}','${s.id}','receiveDate',this.value)">
-    <input class="ci" type="date" style="font-size:11px;min-width:110px" value="${s.deadlineInternal||''}"
-      onchange="updateSubtask('${motherId}','${childId}','${s.id}','deadlineInternal',this.value);refreshStRating('${s.id}','${motherId}','${childId}')">
-    <input class="ci" type="date" style="font-size:11px;min-width:110px" value="${s.deadlineAccount||''}"
-      onchange="updateSubtask('${motherId}','${childId}','${s.id}','deadlineAccount',this.value);refreshStRating('${s.id}','${motherId}','${childId}')">
-    <input class="ci" type="number" min="0" step="0.5" style="font-size:11px;min-width:55px" value="${s.hours||''}"
-      placeholder="hrs" oninput="updateSubtask('${motherId}','${childId}','${s.id}','hours',this.value)">
-    <span class="badge ${bc}" id="strt-${s.id}" style="font-size:10px">${rating||'—'}</span>
-    <select class="prog-sel ${pClass(s.progress)}" style="font-size:10px;padding:2px 5px" id="stp-${s.id}"
-      onchange="setSubtaskProgress('${motherId}','${childId}','${s.id}',this.value)">
-      <option value="" ${!s.progress?'selected':''}>—</option>
-      <option value="inprogress" ${s.progress==='inprogress'?'selected':''}>In Progress</option>
-      <option value="done"       ${s.progress==='done'?'selected':''}>Done</option>
-      <option value="closed"     ${s.progress==='closed'?'selected':''}>Closed</option>
-    </select>
-    <button class="del-btn" onclick="removeSubtask('${motherId}','${childId}','${s.id}')">✕</button>
+  return`<div class="st-row" id="st-${s.id}">
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead>
+        <tr>
+          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:150px">Sub-task</th>
+          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:130px">Assignee</th>
+          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:125px">Received</th>
+          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:125px">Int. Deadline</th>
+          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:125px">Acct. Deadline</th>
+          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:65px">Hours</th>
+          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:70px">Rating</th>
+          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:100px">Progress</th>
+          <th style="border-bottom:1px solid var(--border);width:24px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:3px 6px"><input class="ci" style="font-size:11px" value="${s.name}" placeholder="Sub-task name…" oninput="updateSubtask('${motherId}','${childId}','${s.id}','name',this.value)"></td>
+          <td style="padding:3px 6px">
+            <div class="asgn-wrap">
+              <input class="ci" style="font-size:11px" id="stai-${s.id}" value="${memberNameById(s.assignee)}"
+                placeholder="Assignee…"
+                oninput="onStAssigneeInput('${motherId}','${childId}','${s.id}',this.value)"
+                onfocus="showStAD('${s.id}')" onblur="hideStAD('${s.id}')" autocomplete="off">
+              <div class="asgn-dd" id="stad-${s.id}"></div>
+            </div>
+          </td>
+          <td style="padding:3px 6px"><input class="ci" type="date" style="font-size:11px" value="${s.receiveDate||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','receiveDate',this.value)"></td>
+          <td style="padding:3px 6px"><input class="ci" type="date" style="font-size:11px" value="${s.deadlineInternal||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','deadlineInternal',this.value);refreshStRating('${s.id}','${motherId}','${childId}')"></td>
+          <td style="padding:3px 6px"><input class="ci" type="date" style="font-size:11px" value="${s.deadlineAccount||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','deadlineAccount',this.value);refreshStRating('${s.id}','${motherId}','${childId}')"></td>
+          <td style="padding:3px 6px"><input class="ci" type="number" min="0" step="0.5" style="font-size:11px;min-width:50px" value="${s.hours||''}" placeholder="hrs" oninput="updateSubtask('${motherId}','${childId}','${s.id}','hours',this.value)"></td>
+          <td style="padding:3px 6px"><span class="badge ${bc}" id="strt-${s.id}" style="font-size:10px">${rating||'—'}</span></td>
+          <td style="padding:3px 6px">
+            <select class="prog-sel ${pClass(s.progress)}" style="font-size:10px;padding:2px 5px" id="stp-${s.id}"
+              onchange="setSubtaskProgress('${motherId}','${childId}','${s.id}',this.value)">
+              <option value="" ${!s.progress?'selected':''}>—</option>
+              <option value="inprogress" ${s.progress==='inprogress'?'selected':''}>In Progress</option>
+              <option value="done"       ${s.progress==='done'?'selected':''}>Done</option>
+              <option value="closed"     ${s.progress==='closed'?'selected':''}>Closed</option>
+            </select>
+          </td>
+          <td style="padding:3px 6px"><button class="del-btn" onclick="removeSubtask('${motherId}','${childId}','${s.id}')">✕</button></td>
+        </tr>
+      </tbody>
+    </table>
   </div>`;
 }
 
