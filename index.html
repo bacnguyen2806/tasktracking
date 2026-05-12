@@ -698,7 +698,8 @@ function createDraggableTabBtn(id,label){
   btn.className='tab-btn';
   btn.dataset.tab=id;
   btn.draggable=true;
-  btn.innerHTML=`📋 <span class="tab-label">${label}</span> <span class="tab-close" onclick="removeJobTab('${id}',event)">✕</span>`;
+  // THÊM SỰ KIỆN ONDBLCLICK ĐỂ ĐỔI TÊN TAB
+  btn.innerHTML=`📋 <span class="tab-label" ondblclick="renameJobTab(event, '${id}')" title="Nhấp đúp để đổi tên">${label}</span> <span class="tab-close" onclick="removeJobTab('${id}',event)">✕</span>`;
   btn.onclick=e=>{if(!e.target.classList.contains('tab-close'))switchTab(id,btn)};
   btn.addEventListener('dragstart',e=>{dragSrcTab=btn;e.dataTransfer.effectAllowed='move'});
   btn.addEventListener('dragover',e=>{e.preventDefault();if(dragSrcTab&&dragSrcTab!==btn)btn.classList.add('drag-over')});
@@ -717,6 +718,17 @@ function createDraggableTabBtn(id,label){
   });
   btn.addEventListener('dragend',()=>{document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('drag-over'));dragSrcTab=null});
   return btn;
+}
+
+// HÀM ĐỔI TÊN TAB
+function renameJobTab(e, id) {
+  e.stopPropagation();
+  const job = jobs.find(j => j.id === id);
+  if (!job) return;
+  const newName = prompt("Nhập tên mới cho Job này:", job.tabTitle);
+  if (newName !== null && newName.trim() !== "") {
+    updateJobTitle(id, newName.trim());
+  }
 }
 
 function removeJobTab(id,e){
