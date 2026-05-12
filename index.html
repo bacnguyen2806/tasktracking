@@ -35,9 +35,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .tab-btn{background:none;border:none;cursor:pointer;color:var(--text2);padding:11px 14px;font-family:var(--font);font-size:13px;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap;transition:color .15s;display:flex;align-items:center;gap:6px;flex-shrink:0}
 .tab-btn:hover{color:var(--text)}
 .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
-.tab-btn.drag-over{background:var(--bg4);border-radius:4px 4px 0 0}
-.tab-btn[draggable=true]{cursor:grab}
-.tab-btn[draggable=true]:active{cursor:grabbing;opacity:.7}
+.tab-label{outline:none;border-radius:3px;padding:2px 4px;margin-left:-4px;cursor:text}
+.tab-label:focus{background:var(--bg4);color:var(--text)}
 .tab-add-btn{background:none;border:none;cursor:pointer;color:var(--text3);padding:11px 10px;font-size:18px;line-height:1;transition:color .15s;flex-shrink:0}
 .tab-add-btn:hover{color:var(--accent)}
 .tab-close{width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;color:var(--text3);transition:background .15s,color .15s;flex-shrink:0}
@@ -140,15 +139,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 /* CHILD TABLE */
 .child-table-wrap{overflow-x:auto}
-.child-table{width:100%;border-collapse:collapse;min-width:1100px}
+.child-table{width:100%;border-collapse:collapse;min-width:900px}
 .child-table th{color:var(--text2);font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding:7px 9px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
 .child-table td{padding:6px 9px;border-bottom:1px solid var(--border);vertical-align:top}
-.child-table tr:last-child>td{border-bottom:none}
-.child-table tr:hover>td{background:rgba(255,255,255,.015)}
 .ci{background:none;border:none;color:var(--text);font-family:var(--font);font-size:12px;width:100%;outline:none;padding:3px 4px;border-radius:4px;transition:background .15s;min-width:60px}
 .ci:hover{background:var(--bg3)}
 .ci:focus{background:var(--bg4);border:1px solid var(--border2)}
-.ci[type=date]{color-scheme:dark;min-width:115px}
+.ci[type=date]{color-scheme:dark;min-width:0 !important;}
 .ci[type=number]{min-width:55px}
 select.ci{cursor:pointer;color-scheme:dark}
 .del-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:3px;border-radius:3px;transition:background .15s,color .15s}
@@ -162,15 +159,12 @@ select.ci{cursor:pointer;color-scheme:dark}
 .asgn-opt:hover{background:var(--bg4);color:var(--accent)}
 
 /* SUBTASKS */
-.st-section{margin-top:6px;padding:7px 10px;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border)}
-.st-hdr{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px;display:flex;align-items:center;gap:8px}
-.st-row{display:flex;align-items:center;gap:7px;padding:3px 0;border-bottom:1px solid var(--border)}
-.st-row:last-of-type{border-bottom:none}
-.st-name{flex:1;background:none;border:none;color:var(--text);font-family:var(--font);font-size:12px;outline:none;padding:2px 4px;border-radius:3px}
+.st-section{margin-top:2px;padding:0;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;}
+.st-name{flex:1;background:none;border:none;color:var(--text);font-family:var(--font);font-size:12px;outline:none;padding:2px 4px;border-radius:3px;width:100%}
 .st-name:hover{background:var(--bg3)}
 .st-name:focus{background:var(--bg4)}
-.add-st-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;padding:2px 5px;border-radius:3px;font-family:var(--font);transition:color .15s}
-.add-st-btn:hover{color:var(--accent)}
+.add-st-btn{background:none;border:none;cursor:pointer;color:var(--accent);font-size:13px;padding:2px 5px;border-radius:3px;font-family:var(--font);transition:color .15s}
+.add-st-btn:hover{color:var(--purple)}
 
 /* MODAL */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;align-items:center;justify-content:center}
@@ -325,7 +319,6 @@ let dayoffs = []; // {id, memberId, date, hours}
 let currentPeriod = 'today';
 let customFrom = null, customTo = null;
 let tabCounter = 0;
-let dragSrcTab = null;
 let archiveCurrentJobId = null; // job being previewed from archive tab
 
 const FORMAT_OPTS = ['','Key Visual','Single','Multi','Video','Set Banners'];
@@ -462,7 +455,6 @@ function removeDayoff(id){
   renderOverview();
 }
 
-// Day-off hours for a member in a date range
 function dayoffInRange(memberId,from,to){
   return dayoffs
     .filter(d=>d.memberId===memberId&&d.date&&d.hours)
@@ -499,13 +491,32 @@ function renderOverview(){
   const{from,to}=getDateRange();
   const prev=document.getElementById('memberFilter').value;
 
-  // Collect children
-  let allC=[];
-  jobs.filter(j=>j.status!=='closed'||true).forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
-    if(c.name||c.assignee)allC.push({...c,jobName:j.tabTitle,jobId:j.id});
-  })));
+  let allST = [];
+  let allSJ = [];
 
-  const inRange=allC.filter(c=>taskInRange(c,from,to));
+  jobs.forEach(j => {
+    j.mothers.forEach(m => {
+      m.children.forEach(c => {
+        let sjHasStInRange = false;
+        
+        // Scan Sub-tasks
+        (c.subtasks || []).forEach(st => {
+          if (st.name || st.assignee) {
+            const stObj = {...st, jobName: j.tabTitle, childName: c.name};
+            if (taskInRange(stObj, from, to)) {
+              allST.push(stObj);
+              sjHasStInRange = true;
+            }
+          }
+        });
+        
+        // Push Sub-job if it has active valid sub-tasks within the period 
+        if (sjHasStInRange && (c.name || c.assignee)) {
+          allSJ.push(c);
+        }
+      });
+    });
+  });
 
   // Rebuild member select
   const sel=document.getElementById('memberFilter');
@@ -513,14 +524,14 @@ function renderOverview(){
     members.map(m=>`<option value="${m.id}" ${m.id===prev?'selected':''}>${m.name}</option>`).join('');
   const mf=sel.value;
 
-  const filtered=mf!=='all'?inRange.filter(c=>c.assignee===mf):inRange;
-
-  // Totals
-  let tt=filtered.length,tHrs=0,tE=0,tO=0,tL=0;
-  filtered.forEach(c=>{
-    tHrs+=parseFloat(c.hours)||0;
-    const r=calcRating(c.deadlineInternal,c.deadlineAccount);
-    if(r==='Earlier')tE++;else if(r==='On-time')tO++;else if(r==='Late')tL++;
+  // For summary cards, we calculate based on the current filter
+  const filteredST = mf !== 'all' ? allST.filter(st => st.assignee === mf) : allST;
+  
+  let tt = filteredST.length, tHrs = 0, tE = 0, tO = 0, tL = 0;
+  filteredST.forEach(st => {
+    tHrs += parseFloat(st.hours) || 0;
+    const r = calcRating(st.deadlineInternal, st.deadlineAccount);
+    if(r === 'Earlier') tE++; else if(r === 'On-time') tO++; else if(r === 'Late') tL++;
   });
 
   document.getElementById('summarycards').innerHTML=`
@@ -531,31 +542,50 @@ function renderOverview(){
     <div class="summary-card"><div class="lbl">Late</div><div class="val" style="color:var(--red)">${tL}</div></div>`;
 
   const tbody=document.getElementById('overviewBody');
-  // group by member
   const byMem={};
-  const showMembers=mf!=='all'?members.filter(m=>m.id===mf):members;
-  showMembers.forEach(m=>{byMem[m.id]={member:m,tasks:filtered.filter(c=>c.assignee===m.id)}});
-  // unassigned
-  const unassigned=filtered.filter(c=>!c.assignee||!members.find(m=>m.id===c.assignee));
-  if(unassigned.length) byMem['_unassigned']={member:{id:'_unassigned',name:'(Unassigned)'},tasks:unassigned};
+  
+  const showMembers = mf !== 'all' ? members.filter(m => m.id === mf) : members;
+  showMembers.forEach(m => {
+    byMem[m.id] = {
+      member: m,
+      tasks: allST.filter(st => st.assignee === m.id),     // workload by Sub-task Assignee
+      subjobs: allSJ.filter(sj => sj.assignee === m.id)   // format count by Sub-job Assignee
+    };
+  });
+
+  // unassigned checks
+  const unassignedST = allST.filter(st => !st.assignee || !members.find(m => m.id === st.assignee));
+  const unassignedSJ = allSJ.filter(sj => !sj.assignee || !members.find(m => m.id === sj.assignee));
+  if(unassignedST.length || unassignedSJ.length) {
+    byMem['_unassigned'] = {
+      member: {id: '_unassigned', name: '(Unassigned)'},
+      tasks: unassignedST,
+      subjobs: unassignedSJ
+    };
+  }
 
   if(!Object.keys(byMem).length){
     tbody.innerHTML=`<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--text3)">No data for this period.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML=Object.values(byMem).map(({member,tasks})=>{
-    const hrs=tasks.reduce((s,c)=>s+(parseFloat(c.hours)||0),0);
-    const doHrs=from&&to?dayoffInRange(member.id,from,to):0;
-    const free=from&&to?calcFreeHours(member.id,from,to,hrs):0;
-    const earlier=tasks.filter(c=>calcRating(c.deadlineInternal,c.deadlineAccount)==='Earlier').length;
-    const ontime=tasks.filter(c=>calcRating(c.deadlineInternal,c.deadlineAccount)==='On-time').length;
-    const late=tasks.filter(c=>calcRating(c.deadlineInternal,c.deadlineAccount)==='Late').length;
-    // format counts
-    const fc={};
-    ['Key Visual','Single','Multi','Video','Set Banners'].forEach(f=>{fc[f]=tasks.filter(c=>c.format===f).length});
-    const taskPills=tasks.map(c=>`<span class="task-pill">${c.name||c.jobName}</span>`).join('');
-    const initials=getInitials(member.name);
+  tbody.innerHTML=Object.values(byMem).map(({member, tasks, subjobs}) => {
+    const hrs = tasks.reduce((s,st) => s + (parseFloat(st.hours) || 0), 0);
+    const doHrs = from && to ? dayoffInRange(member.id, from, to) : 0;
+    const free = from && to ? calcFreeHours(member.id, from, to, hrs) : 0;
+    
+    const earlier = tasks.filter(st => calcRating(st.deadlineInternal, st.deadlineAccount) === 'Earlier').length;
+    const ontime = tasks.filter(st => calcRating(st.deadlineInternal, st.deadlineAccount) === 'On-time').length;
+    const late = tasks.filter(st => calcRating(st.deadlineInternal, st.deadlineAccount) === 'Late').length;
+    
+    // format counts based on Sub-job's assignee
+    const fc = {};
+    FORMAT_OPTS.forEach(f => {
+      if(f) fc[f] = subjobs.filter(sj => sj.format === f).length;
+    });
+
+    const taskPills = tasks.map(st => `<span class="task-pill">${st.jobName}${st.childName?' → '+st.childName:''}${st.name?' → '+st.name:''}</span>`).join('');
+    const initials = getInitials(member.name);
 
     return`<tr>
       <td><div style="display:flex;align-items:center;gap:7px"><div class="avatar">${initials}</div><span>${member.name}</span></div></td>
@@ -579,26 +609,25 @@ function renderTaskToday(){
   document.getElementById('ttDateLabel').textContent=td.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   const body=document.getElementById('taskTodayBody');
 
-  // Task Today logic:
-  // Must have at least one date. receiveDate<=today (if set). deadlineInternal>=today (if set).
   let rows=[];
   jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
-    const rd=c.receiveDate?new Date(c.receiveDate):null;
-    const di=c.deadlineInternal?new Date(c.deadlineInternal):null;
-    if(!rd&&!di) return; // no dates = not schedulable, skip
-    if(rd&&rd>td) return; // not received yet
-    if(di&&di<td) return; // deadline already passed
-    if(c.name||c.assignee){
-      rows.push({...c,jobName:j.tabTitle,jobId:j.id,motherId:m.id,motherName:m.name});
-    }
+    (c.subtasks||[]).forEach(st => {
+      const rd = st.receiveDate ? new Date(st.receiveDate) : null;
+      const di = st.deadlineInternal ? new Date(st.deadlineInternal) : null;
+      if(!rd && !di) return; 
+      if(rd && rd > td) return; 
+      if(di && di < td) return; 
+      if(st.name || st.assignee){
+        rows.push({...st, jobName: j.tabTitle, jobId: j.id, motherId: m.id, childId: c.id, childName: c.name});
+      }
+    });
   })));
 
-  // Group by member name (sorted alphabetically)
   const byMem={};
   rows.forEach(r=>{
-    const mem=members.find(m=>m.id===r.assignee);
-    const key=mem?mem.name:'(Unassigned)';
-    if(!byMem[key])byMem[key]=[];
+    const mem = members.find(m => m.id === r.assignee);
+    const key = mem ? mem.name : '(Unassigned)';
+    if(!byMem[key]) byMem[key] = [];
     byMem[key].push(r);
   });
 
@@ -617,19 +646,13 @@ function renderTaskToday(){
         <span style="font-size:11px;color:var(--text3);margin-left:auto;font-family:var(--mono)">${tasks.length} task${tasks.length!==1?'s':''}</span>
       </div>
       <div class="tt-body">
-        ${tasks.map(c=>{
-          const stList=(c.subtasks||[]).map(s=>`
-            <div class="tt-job-row tt-indent2">
-              ↳ <button class="tt-link" onclick="jumpTo('${c.jobId}','${c.motherId}','${c.id}','${s.id}')">${s.name||'(unnamed subtask)'}</button>
-              ${s.progress?`<span class="badge ${s.progress==='done'?'bg-green':s.progress==='inprogress'?'bg-blue':'bg-red'}" style="margin-left:6px;font-size:10px">${s.progress==='inprogress'?'In Progress':s.progress==='done'?'Done':'Closed'}</span>`:''}
-            </div>`).join('');
+        ${tasks.map(st=>{
           return`<div class="tt-job-row">
-            <button class="tt-link" onclick="jumpTo('${c.jobId}','${c.motherId}','${c.id}',null)">
-              ${c.jobName}${c.name?' → '+c.name:''}
+            <button class="tt-link" onclick="jumpTo('${st.jobId}','${st.motherId}','${st.childId}','${st.id}')">
+              ${st.jobName} → ${st.childName||'SJ'} → ${st.name||'ST'}
             </button>
-            ${c.format?`<span style="font-size:10px;color:var(--text3);margin-left:6px">[${c.format}]</span>`:''}
-            ${c.progress?`<span class="badge ${c.progress==='done'?'bg-green':c.progress==='inprogress'?'bg-blue':'bg-red'}" style="margin-left:6px;font-size:10px">${c.progress==='inprogress'?'In Progress':c.progress==='done'?'Done':'Closed'}</span>`:''}
-          </div>${stList}`;
+            ${st.progress?`<span class="badge ${st.progress==='done'?'bg-green':st.progress==='inprogress'?'bg-blue':'bg-red'}" style="margin-left:6px;font-size:10px">${st.progress==='inprogress'?'In Progress':st.progress==='done'?'Done':'Closed'}</span>`:''}
+          </div>`;
         }).join('')}
       </div>
     </div>`;
@@ -642,12 +665,10 @@ function toggleTTMember(hdr){
 }
 
 function jumpTo(jobId,motherId,childId,subtaskId){
-  // Switch to job tab
   const btn=document.querySelector(`[data-tab="${jobId}"]`);
   if(btn)switchTab(jobId,btn);
-  // Scroll to child row
   setTimeout(()=>{
-    const el=document.getElementById('row-'+childId)||document.getElementById('mother-'+motherId);
+    const el = document.getElementById('row-'+childId) || document.getElementById('mother-'+motherId);
     if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.outline='2px solid var(--accent)';setTimeout(()=>el.style.outline='',1500)}
     if(subtaskId){const st=document.getElementById('st-'+subtaskId);if(st){st.scrollIntoView({behavior:'smooth',block:'center'});st.style.outline='2px solid var(--purple)';setTimeout(()=>st.style.outline='',1500)}}
   },100);
@@ -681,7 +702,7 @@ function addJobTab(title){
 function insertJobTab(job){
   const tabsBar=document.getElementById('tabsBar');
   const addBtn=tabsBar.querySelector('.tab-add-btn');
-  const btn=createDraggableTabBtn(job.id,job.tabTitle);
+  const btn=createTabBtn(job.id,job.tabTitle);
   tabsBar.insertBefore(btn,addBtn);
 
   const panel=document.createElement('div');
@@ -693,42 +714,42 @@ function insertJobTab(job){
   switchTab(job.id,btn);
 }
 
-function createDraggableTabBtn(id,label){
+function createTabBtn(id,label){
   const btn=document.createElement('button');
   btn.className='tab-btn';
   btn.dataset.tab=id;
-  btn.draggable=true;
-  // THÊM SỰ KIỆN ONDBLCLICK ĐỂ ĐỔI TÊN TAB
-  btn.innerHTML=`📋 <span class="tab-label" ondblclick="renameJobTab(event, '${id}')" title="Nhấp đúp để đổi tên">${label}</span> <span class="tab-close" onclick="removeJobTab('${id}',event)">✕</span>`;
-  btn.onclick=e=>{if(!e.target.classList.contains('tab-close'))switchTab(id,btn)};
-  btn.addEventListener('dragstart',e=>{dragSrcTab=btn;e.dataTransfer.effectAllowed='move'});
-  btn.addEventListener('dragover',e=>{e.preventDefault();if(dragSrcTab&&dragSrcTab!==btn)btn.classList.add('drag-over')});
-  btn.addEventListener('dragleave',()=>btn.classList.remove('drag-over'));
-  btn.addEventListener('drop',e=>{
-    e.preventDefault();btn.classList.remove('drag-over');
-    if(!dragSrcTab||dragSrcTab===btn)return;
-    const bar=document.getElementById('tabsBar');
-    const allBtns=[...bar.querySelectorAll('.tab-btn[data-tab]')];
-    const si=allBtns.indexOf(dragSrcTab),ti=allBtns.indexOf(btn);
-    if(si<0||ti<0)return;
-    if(si<ti)bar.insertBefore(dragSrcTab,btn.nextSibling);else bar.insertBefore(dragSrcTab,btn);
-    const j=jobs.splice(si,1)[0];
-    jobs.splice(ti,0,j);
-    saveData();
-  });
-  btn.addEventListener('dragend',()=>{document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('drag-over'));dragSrcTab=null});
+  
+  btn.innerHTML=`📋 <span class="tab-label" ondblclick="makeTabEditable(event, '${id}')" title="Nhấp đúp để đổi tên">${label}</span> <span class="tab-close" onclick="removeJobTab('${id}',event)">✕</span>`;
+  btn.onclick=e=>{if(!e.target.classList.contains('tab-close') && e.target.contentEditable !== "true") switchTab(id,btn)};
+  
   return btn;
 }
 
-// HÀM ĐỔI TÊN TAB
-function renameJobTab(e, id) {
+// INLINE EDIT TAB NAME
+function makeTabEditable(e, id) {
   e.stopPropagation();
-  const job = jobs.find(j => j.id === id);
-  if (!job) return;
-  const newName = prompt("Nhập tên mới cho Job này:", job.tabTitle);
-  if (newName !== null && newName.trim() !== "") {
-    updateJobTitle(id, newName.trim());
-  }
+  const span = e.target;
+  span.contentEditable = "true";
+  span.focus();
+  document.execCommand('selectAll', false, null);
+  
+  span.onkeydown = function(evt) {
+    if (evt.key === 'Enter') {
+      evt.preventDefault();
+      span.blur();
+    }
+  };
+  
+  span.onblur = function() {
+    span.contentEditable = "false";
+    const newName = span.textContent.trim();
+    if (newName) {
+      updateJobTitle(id, newName);
+    } else {
+      const job = jobs.find(j=>j.id===id);
+      span.textContent = job ? job.tabTitle : 'Job';
+    }
+  };
 }
 
 function removeJobTab(id,e){
@@ -747,7 +768,6 @@ function buildArchiveList(){
   const closed=jobs.filter(j=>j.status==='closed');
   const btn=document.getElementById('archiveBtn');
   btn.classList.toggle('has-closed',closed.length>0);
-  // Remove tab buttons for closed jobs from bar (keep panel in DOM)
   jobs.forEach(j=>{
     const tabBtn=document.querySelector(`[data-tab="${j.id}"]`);
     if(!tabBtn)return;
@@ -783,7 +803,6 @@ function renderArchiveDropdown(){
 
 function openClosedJob(jobId){
   closeArchiveDropdown();
-  // Show this job's panel but keep "…" as the active tab button
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('archiveBtn').style.color='var(--accent)';
@@ -824,13 +843,11 @@ function setJobStatus(jobId,val){
   const sel=document.getElementById('jstatus-'+jobId);
   if(sel)sel.className='status-select'+(val==='inprogress'?' st-inprogress':val==='closed'?' st-closed':'');
   buildArchiveList();
-  // update tab label colour
   const tabBtn=document.querySelector(`[data-tab="${jobId}"] .tab-label`);
   if(tabBtn){tabBtn.style.color=val==='closed'?'var(--red)':val==='inprogress'?'var(--accent)':''}
   saveData();
 }
 
-// Description
 function editDesc(jobId){
   document.getElementById('dr-'+jobId).style.display='none';
   const ta=document.getElementById('da-'+jobId);ta.style.display='block';ta.focus();
@@ -845,19 +862,12 @@ function saveDesc(jobId){
   const dr=document.getElementById('dr-'+jobId);dr.style.display='';dr.innerHTML=linkify(j.description)||'';
 }
 
-// Mother
 function motherHTML(jobId,mother){
   return`<div class="job-mother" id="mother-${mother.id}">
     <div class="job-mother-header">
       <span class="chevron" onclick="toggleMother('${mother.id}')">▾</span>
       <input class="job-mother-name" value="${mother.name}" oninput="updateMotherName('${mother.id}',this.value)" placeholder="Parent job name…">
       <span class="job-count" onclick="toggleMother('${mother.id}')">${mother.children.length} tasks</span>
-      <select class="prog-sel ${pClass(mother.progress)}" id="mp-${mother.id}" onchange="setMotherProgress('${jobId}','${mother.id}',this.value)">
-        <option value="" ${!mother.progress?'selected':''}>— Progress</option>
-        <option value="inprogress" ${mother.progress==='inprogress'?'selected':''}>In Progress</option>
-        <option value="done"       ${mother.progress==='done'?'selected':''}>Done</option>
-        <option value="closed"     ${mother.progress==='closed'?'selected':''}>Closed</option>
-      </select>
       <button class="btn btn-ghost btn-sm" onclick="addChild('${jobId}','${mother.id}')">＋ Sub-job</button>
       <button class="btn btn-danger btn-sm" onclick="removeMother('${jobId}','${mother.id}')">✕</button>
     </div>
@@ -865,9 +875,11 @@ function motherHTML(jobId,mother){
       <div class="child-table-wrap">
         <table class="child-table">
           <thead><tr>
-            <th>#</th><th>Sub-job</th><th>Format</th><th>Assignee</th>
-            <th>Received</th><th>Int. Deadline</th><th>Acct. Deadline</th>
-            <th>Hours</th><th>Rating</th><th>Progress</th><th></th>
+            <th style="width:30px">#</th>
+            <th>Sub-job Name</th>
+            <th style="width:130px">Format</th>
+            <th style="width:160px">Assignee (Format)</th>
+            <th style="width:40px"></th>
           </tr></thead>
           <tbody id="children-${mother.id}">
             ${[...mother.children].reverse().map((c,i)=>childRowHTML(jobId,mother.id,c,mother.children.length-i)).join('')}
@@ -880,21 +892,16 @@ function motherHTML(jobId,mother){
 }
 
 function childRowHTML(jobId,motherId,child,idx){
-  const rating=calcRating(child.deadlineInternal,child.deadlineAccount);
-  const bc=rating==='Earlier'?'bg-green':rating==='On-time'?'bg-amber':rating==='Late'?'bg-red':'';
   const stHTML=(child.subtasks||[]).slice().reverse().map(s=>subtaskHTML(motherId,child.id,s)).join('');
 
-  return`<tr id="row-${child.id}">
+  return`
+  <tr id="row-${child.id}" style="border-bottom:none">
     <td style="color:var(--text3);font-family:var(--mono);font-size:10px">${idx}</td>
-    <td style="min-width:130px">
+    <td>
       <input class="ci" value="${child.name}" oninput="updateChild('${motherId}','${child.id}','name',this.value)" placeholder="Sub-job name…">
-      <div class="st-section" id="sts-${child.id}">
-        <div class="st-hdr">Sub-tasks <button class="add-st-btn" onclick="addSubtask('${jobId}','${motherId}','${child.id}')">＋ Add</button></div>
-        <div id="stlist-${child.id}">${stHTML}</div>
-      </div>
     </td>
     <td>
-      <select class="ci" style="min-width:110px" onchange="updateChild('${motherId}','${child.id}','format',this.value)">
+      <select class="ci" onchange="updateChild('${motherId}','${child.id}','format',this.value)">
         ${FORMAT_OPTS.map(f=>`<option value="${f}" ${child.format===f?'selected':''}>${f||'— Format —'}</option>`).join('')}
       </select>
     </td>
@@ -907,33 +914,56 @@ function childRowHTML(jobId,motherId,child,idx){
         <div class="asgn-dd" id="ad-${child.id}"></div>
       </div>
     </td>
-    <td><input class="ci" type="date" value="${child.receiveDate}" onchange="updateChild('${motherId}','${child.id}','receiveDate',this.value)"></td>
-    <td><input class="ci" type="date" value="${child.deadlineInternal}" onchange="updateChild('${motherId}','${child.id}','deadlineInternal',this.value);refreshRating('${child.id}')"></td>
-    <td><input class="ci" type="date" value="${child.deadlineAccount}"  onchange="updateChild('${motherId}','${child.id}','deadlineAccount',this.value);refreshRating('${child.id}')"></td>
-    <td><input class="ci" type="number" min="0" step="0.5" value="${child.hours||''}" placeholder="hrs" oninput="updateChild('${motherId}','${child.id}','hours',this.value)" style="min-width:55px"></td>
-    <td><span class="badge ${bc}" id="rt-${child.id}">${rating||'—'}</span></td>
-    <td>
-      <select class="prog-sel ${pClass(child.progress)}" id="cp-${child.id}" onchange="setChildProgress('${jobId}','${motherId}','${child.id}',this.value)">
-        <option value="" ${!child.progress?'selected':''}>—</option>
-        <option value="inprogress" ${child.progress==='inprogress'?'selected':''}>In Progress</option>
-        <option value="done"       ${child.progress==='done'?'selected':''}>Done</option>
-        <option value="closed"     ${child.progress==='closed'?'selected':''}>Closed</option>
-      </select>
-    </td>
     <td><button class="del-btn" onclick="removeChild('${motherId}','${child.id}')">✕</button></td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border)">
+    <td colspan="5" style="padding:0 10px 14px 25px;">
+      <div class="st-section" id="sts-${child.id}">
+        <div class="st-hdr" style="display:grid; grid-template-columns: minmax(100px, 2fr) minmax(100px, 1fr) 100px 100px 100px 60px 60px 80px 30px; gap:8px; align-items:center; padding: 4px 6px; background:var(--bg3); border-bottom:1px solid var(--border);">
+          <span style="display:flex;align-items:center;gap:6px">Sub-tasks <button class="add-st-btn" onclick="addSubtask('${jobId}','${motherId}','${child.id}')">＋ Thêm</button></span>
+          <span>Assignee</span>
+          <span>Received</span>
+          <span>Int. Deadline</span>
+          <span>Acct. Deadline</span>
+          <span>Hours</span>
+          <span>Rating</span>
+          <span>Progress</span>
+          <span></span>
+        </div>
+        <div id="stlist-${child.id}">${stHTML}</div>
+      </div>
+    </td>
   </tr>`;
 }
 
 function subtaskHTML(motherId,childId,s){
-  return`<div class="st-row" id="st-${s.id}">
-    <select class="prog-sel ${pClass(s.progress)}" style="font-size:10px;padding:2px 5px" id="stp-${s.id}"
-      onchange="setSubtaskProgress('${motherId}','${childId}','${s.id}',this.value)">
+  const rating = calcRating(s.deadlineInternal, s.deadlineAccount);
+  const bc = rating==='Earlier'?'bg-green':rating==='On-time'?'bg-amber':rating==='Late'?'bg-red':'';
+
+  return`
+  <div class="st-row" id="st-${s.id}" style="display:grid; grid-template-columns: minmax(100px, 2fr) minmax(100px, 1fr) 100px 100px 100px 60px 60px 80px 30px; gap:8px; align-items:center; padding:6px; border-bottom:1px solid var(--border2)">
+    <input class="st-name" value="${s.name}" placeholder="Sub-task name…" oninput="updateSubtask('${motherId}','${childId}','${s.id}','name',this.value)">
+    
+    <div class="asgn-wrap">
+      <input class="ci" style="font-size:11px; padding:2px 4px" id="sai-${s.id}" value="${memberNameById(s.assignee)}" placeholder="Assignee…" oninput="onSTAssigneeInput('${s.id}',this.value)" onfocus="showSAD('${s.id}')" onblur="hideSAD('${s.id}')" autocomplete="off">
+      <div class="asgn-dd" id="sad-${s.id}"></div>
+    </div>
+    
+    <input class="ci" style="font-size:11px; padding:2px 4px; min-width:0 !important; width:100%" type="date" value="${s.receiveDate||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','receiveDate',this.value)">
+    <input class="ci" style="font-size:11px; padding:2px 4px; min-width:0 !important; width:100%" type="date" value="${s.deadlineInternal||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','deadlineInternal',this.value); refreshSTRating('${s.id}')">
+    <input class="ci" style="font-size:11px; padding:2px 4px; min-width:0 !important; width:100%" type="date" value="${s.deadlineAccount||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','deadlineAccount',this.value); refreshSTRating('${s.id}')">
+    
+    <input class="ci" style="font-size:11px; padding:2px 4px" type="number" min="0" step="0.5" value="${s.hours||''}" placeholder="hrs" oninput="updateSubtask('${motherId}','${childId}','${s.id}','hours',this.value)">
+    
+    <span class="badge ${bc}" id="srt-${s.id}" style="font-size:10px">${rating||'—'}</span>
+    
+    <select class="prog-sel ${pClass(s.progress)}" style="font-size:10px;padding:2px 5px" id="stp-${s.id}" onchange="setSubtaskProgress('${motherId}','${childId}','${s.id}',this.value)">
       <option value="" ${!s.progress?'selected':''}>—</option>
       <option value="inprogress" ${s.progress==='inprogress'?'selected':''}>In Progress</option>
       <option value="done"       ${s.progress==='done'?'selected':''}>Done</option>
       <option value="closed"     ${s.progress==='closed'?'selected':''}>Closed</option>
     </select>
-    <input class="st-name" value="${s.name}" placeholder="Sub-task…" oninput="updateSubtask('${motherId}','${childId}','${s.id}','name',this.value)">
+    
     <button class="del-btn" onclick="removeSubtask('${motherId}','${childId}','${s.id}')">✕</button>
   </div>`;
 }
@@ -974,51 +1004,8 @@ function setSubtaskProgress(mid,cid,sid,val){
     const s=(c.subtasks||[]).find(s=>s.id===sid);if(!s)return;
     s.progress=val;
     const el=document.getElementById('stp-'+sid);if(el){el.className='prog-sel '+pClass(val);el.style.fontSize='10px';el.style.padding='2px 5px'}
-    checkAutoChild(j.id,mid,cid);
   });
   saveData();
-}
-function setChildProgress(jid,mid,cid,val){
-  jobs.forEach(j=>{
-    if(j.id!==jid)return;
-    const m=j.mothers.find(m=>m.id===mid);if(!m)return;
-    const c=m.children.find(c=>c.id===cid);if(!c)return;
-    c.progress=val;
-    const el=document.getElementById('cp-'+cid);if(el)el.className='prog-sel '+pClass(val);
-    checkAutoMother(jid,mid);
-  });
-  saveData();
-}
-function setMotherProgress(jid,mid,val){
-  jobs.forEach(j=>{
-    if(j.id!==jid)return;
-    const m=j.mothers.find(m=>m.id===mid);if(!m)return;
-    m.progress=val;
-    const el=document.getElementById('mp-'+mid);if(el)el.className='prog-sel '+pClass(val);
-  });
-  saveData();
-}
-function checkAutoChild(jid,mid,cid){
-  jobs.forEach(j=>{
-    if(j.id!==jid)return;
-    const m=j.mothers.find(m=>m.id===mid);if(!m)return;
-    const c=m.children.find(c=>c.id===cid);if(!c||!c.subtasks||!c.subtasks.length)return;
-    if(c.subtasks.every(s=>s.progress==='done'||s.progress==='closed')){
-      c.progress='done';
-      const el=document.getElementById('cp-'+cid);if(el){el.value='done';el.className='prog-sel p-done'}
-      checkAutoMother(jid,mid);
-    }
-  });
-}
-function checkAutoMother(jid,mid){
-  jobs.forEach(j=>{
-    if(j.id!==jid)return;
-    const m=j.mothers.find(m=>m.id===mid);if(!m||!m.children.length)return;
-    if(m.children.every(c=>c.progress==='done'||c.progress==='closed')){
-      m.progress='done';
-      const el=document.getElementById('mp-'+mid);if(el){el.value='done';el.className='prog-sel p-done'}
-    }
-  });
 }
 
 function addMother(jobId){
@@ -1042,13 +1029,14 @@ function removeMother(jid,mid){
 function addChild(jid,mid){
   jobs.forEach(j=>{
     const m=j.mothers.find(m=>m.id===mid);if(!m)return;
-    const child={id:uid(),name:'',assignee:'',format:'',receiveDate:'',deadlineInternal:'',deadlineAccount:'',hours:'',progress:'',subtasks:[]};
+    const child={id:uid(),name:'',assignee:'',format:'',subtasks:[]};
     m.children.push(child);
     const tbody=document.getElementById('children-'+mid);if(!tbody)return;
-    // newest on top
     const dummy=document.createElement('table');
     dummy.innerHTML='<tbody>'+childRowHTML(j.id,mid,child,m.children.length)+'</tbody>';
-    tbody.insertBefore(dummy.querySelector('tr'),tbody.firstChild);
+    while(dummy.querySelector('tbody').firstChild) {
+      tbody.insertBefore(dummy.querySelector('tbody').firstChild, tbody.firstChild);
+    }
     const countEl=document.querySelector(`#mother-${mid} .job-count`);
     if(countEl)countEl.textContent=m.children.length+' tasks';
   });
@@ -1059,6 +1047,7 @@ function removeChild(mid,cid){
     const m=j.mothers.find(m=>m.id===mid);if(!m)return;
     m.children=m.children.filter(c=>c.id!==cid);
     document.getElementById('row-'+cid)?.remove();
+    document.getElementById('row-'+cid)?.nextElementSibling?.remove(); // remove subtask tr wrapper
     const countEl=document.querySelector(`#mother-${mid} .job-count`);
     if(countEl)countEl.textContent=m.children.length+' tasks';
   });
@@ -1070,12 +1059,12 @@ function addSubtask(jid,mid,cid){
     const m=j.mothers.find(m=>m.id===mid);if(!m)return;
     const c=m.children.find(c=>c.id===cid);if(!c)return;
     if(!c.subtasks)c.subtasks=[];
-    const s={id:uid(),name:'',progress:''};
+    const s={id:uid(),name:'',assignee:'',receiveDate:'',deadlineInternal:'',deadlineAccount:'',hours:'',progress:''};
     c.subtasks.push(s);
     const list=document.getElementById('stlist-'+cid);if(!list)return;
     const div=document.createElement('div');
     div.innerHTML=subtaskHTML(mid,cid,s);
-    list.insertBefore(div.firstChild,list.firstChild); // newest on top
+    list.insertBefore(div.firstChild,list.firstChild);
   });
   saveData();
 }
@@ -1096,20 +1085,22 @@ function calcRating(di,da){
   if(isNaN(d1)||isNaN(d2))return'';
   if(d1<d2)return'Earlier';if(d1.getTime()===d2.getTime())return'On-time';return'Late';
 }
-function refreshRating(cid){
-  jobs.forEach(j=>j.mothers.forEach(m=>{
-    const c=m.children.find(c=>c.id===cid);if(!c)return;
-    const r=calcRating(c.deadlineInternal,c.deadlineAccount);
-    const bc=r==='Earlier'?'bg-green':r==='On-time'?'bg-amber':r==='Late'?'bg-red':'';
-    const el=document.getElementById('rt-'+cid);if(el){el.textContent=r||'—';el.className='badge '+bc}
-  }));
+function refreshSTRating(sid){
+  jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
+    const s = (c.subtasks||[]).find(x=>x.id===sid);
+    if(s){
+      const r = calcRating(s.deadlineInternal, s.deadlineAccount);
+      const bc = r==='Earlier'?'bg-green':r==='On-time'?'bg-amber':r==='Late'?'bg-red':'';
+      const el = document.getElementById('srt-'+sid);
+      if(el){el.textContent=r||'—';el.className='badge '+bc;}
+    }
+  })));
 }
 
-// ASSIGNEE
+// ASSIGNEE (Sub-job)
 function onAssigneeInput(mid,cid,val){
-  // try to resolve by name
   const id=memberIdByName(val);
-  updateChild(mid,cid,'assignee',id||val); // store id if found, else raw text
+  updateChild(mid,cid,'assignee',id||val); 
   showAD(cid,val);
 }
 function showAD(cid,q){
@@ -1132,6 +1123,37 @@ function pickAssignee(mid,cid,memId,memName){
   saveData();
 }
 
+// ASSIGNEE (Sub-task)
+function onSTAssigneeInput(sid,val){
+  const id=memberIdByName(val);
+  let f_mid, f_cid;
+  jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
+    if((c.subtasks||[]).find(x=>x.id===sid)){ f_mid=m.id; f_cid=c.id; }
+  })));
+  if(f_mid && f_cid) updateSubtask(f_mid, f_cid, sid, 'assignee', id||val);
+  showSAD(sid,val);
+}
+function showSAD(sid,q){
+  const inp=document.getElementById('sai-'+sid);
+  const dd=document.getElementById('sad-'+sid);if(!inp||!dd)return;
+  const query=(q!==undefined?q:inp.value).toLowerCase();
+  const fl=members.filter(m=>m.name.toLowerCase().includes(query));
+  if(!fl.length){dd.classList.remove('open');return}
+  dd.innerHTML=fl.map(m=>`<div class="asgn-opt" onmousedown="pickSTAssignee('${sid}','${m.id}','${m.name}')">${m.name}</div>`).join('');
+  dd.classList.add('open');
+}
+function hideSAD(sid){setTimeout(()=>document.getElementById('sad-'+sid)?.classList.remove('open'),150)}
+function pickSTAssignee(sid,memId,memName){
+  let f_mid, f_cid;
+  jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
+    if((c.subtasks||[]).find(x=>x.id===sid)){ f_mid=m.id; f_cid=c.id; }
+  })));
+  if(f_mid && f_cid) updateSubtask(f_mid, f_cid, sid, 'assignee', memId);
+  const inp=document.getElementById('sai-'+sid);if(inp)inp.value=memName;
+  document.getElementById('sad-'+sid)?.classList.remove('open');
+  saveData();
+}
+
 // ═══════════════════════════════════
 //  PERSIST (localStorage)
 // ═══════════════════════════════════
@@ -1150,6 +1172,11 @@ function loadData(){
     const d=localStorage.getItem('tt_dayoffs');  if(d) dayoffs=JSON.parse(d);
     const j=localStorage.getItem('tt_jobs');     if(j) jobs=JSON.parse(j);
     const tc=localStorage.getItem('tt_tabCounter'); if(tc) tabCounter=parseInt(tc)||0;
+    
+    // Auto fix if old data structure lacks Sub-tasks
+    jobs.forEach(jb => jb.mothers.forEach(mo => mo.children.forEach(ch => {
+      if(!ch.subtasks) ch.subtasks = [];
+    })));
   }catch(e){console.warn('Load failed',e)}
 }
 
@@ -1157,11 +1184,10 @@ function loadData(){
 //  INIT
 // ═══════════════════════════════════
 loadData();
-// Rebuild job tabs from saved data
 jobs.forEach(job=>{
   const tabsBar=document.getElementById('tabsBar');
   const addBtn=tabsBar.querySelector('.tab-add-btn');
-  const btn=createDraggableTabBtn(job.id,job.tabTitle);
+  const btn=createTabBtn(job.id,job.tabTitle);
   tabsBar.insertBefore(btn,addBtn);
   const panel=document.createElement('div');
   panel.className='tab-panel';
