@@ -268,8 +268,7 @@ select.ci{cursor:pointer;color-scheme:dark}
   <div class="tab-panel active" id="tab-overview">
     <div class="overview-controls">
       <div class="filter-group">
-        <button class="filter-btn active" data-period="today"  onclick="setPeriod('today',this)">Today</button>
-        <button class="filter-btn" data-period="week"   onclick="setPeriod('week',this)">This Week</button>
+        <button class="filter-btn active" data-period="week" onclick="setPeriod('week',this)">This Week</button>
         <button class="filter-btn" data-period="month"  onclick="setPeriod('month',this)">This Month</button>
         <button class="filter-btn" data-period="year"   onclick="setPeriod('year',this)">This Year</button>
         <button class="filter-btn" data-period="custom" onclick="setPeriod('custom',this)">Custom</button>
@@ -331,7 +330,7 @@ select.ci{cursor:pointer;color-scheme:dark}
 let jobs    = [];
 let members = [];
 let dayoffs = []; // {id, memberId, date, hours}
-let currentPeriod = 'today';
+let currentPeriod = 'week';
 let customFrom = null, customTo = null;
 let tabCounter = 0;
 let dragSrcTab = null;
@@ -385,10 +384,12 @@ function getDateRange(){
   return{from:null,to:null};
 }
 
+function parseLD(str){if(!str)return null;const[y,m,d]=str.split('-').map(Number);return new Date(y,m-1,d);}
 function taskInRange(c,from,to){
   if(!from||!to)return true;
-  const rd=c.receiveDate?new Date(c.receiveDate):null;
-  const di=c.deadlineInternal?new Date(c.deadlineInternal):null;
+  const sd=c.startedDate||c.receiveDate;
+  const rd=parseLD(sd);
+  const di=parseLD(c.deadlineInternal);
   if(rd&&rd>=from&&rd<=to)return true;
   if(di&&di>=from&&di<=to)return true;
   if(rd&&di&&rd<=to&&di>=from)return true;
@@ -491,8 +492,7 @@ function applyCustomRange(){
 function calcFreeHours(memberId,from,to,booked){
   const doHrs=dayoffInRange(memberId,from,to);
   let capacity=0;
-  if(currentPeriod==='today') capacity=8;
-  else if(currentPeriod==='week') capacity=40;
+  if(currentPeriod==='week') capacity=40;
   else capacity=countWeekdays(from,to)*8;
   return Math.max(0,capacity-booked-doHrs);
 }
@@ -508,10 +508,18 @@ function renderOverview(){
   })));
 
   // Collect sub-tasks separately (for tasks count, hours, rating — by subtask assignee)
+  // Also attach parent sub-job info: format, assignee, progress (for format counting)
   let allST=[];
   jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
     (c.subtasks||[]).forEach(s=>{
-      if(s.name||s.assignee)allST.push({...s,jobName:j.tabTitle,jobId:j.id,parentFormat:c.format,_type:'subtask'});
+      if(s.name||s.assignee)allST.push({
+        ...s,
+        jobName:j.tabTitle,jobId:j.id,
+        parentFormat:c.format,
+        parentAssignee:c.assignee,
+        parentProgress:c.progress,
+        _type:'subtask'
+      });
     });
   })));
 
@@ -569,16 +577,18 @@ function renderOverview(){
     const earlier = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Earlier').length;
     const ontime  = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='On-time').length;
     const late    = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Late').length;
-    // format counts — sub-job format attributed to sub-job assignee
+    // format counts — unique Done sub-jobs that have sub-tasks in range, attributed to sub-job assignee
+    // Use stInRange to find which sub-jobs are active this period, then check sub-job assignee + progress
     const fc={};
-    ['Key Visual','Single','Multi','Video','Set Banners'].forEach(f=>{fc[f]=tasks.filter(c=>c.format===f).length});
-    // task pills from sub-jobs (for display)
-    const taskPills=tasks.map(c=>`<span class="task-pill">${c.name||c.jobName}</span>`).join('');
+    const doneSubjobs=allC.filter(c=>c.assignee===member.id && c.progress==='done');
+    ['Key Visual','Single','Multi','Video','Set Banners'].forEach(f=>{fc[f]=doneSubjobs.filter(c=>c.format===f).length});
+    // tasks column = total count of sub-tasks
+    const taskCount=mySTs.length;
     const initials=getInitials(member.name);
 
     return`<tr>
       <td><div style="display:flex;align-items:center;gap:7px"><div class="avatar">${initials}</div><span>${member.name}</span></div></td>
-      <td>${taskPills||'<span style="color:var(--text3);font-size:12px">—</span>'}</td>
+      <td style="font-family:var(--mono);font-size:13px;color:var(--text)">${taskCount||'<span style="color:var(--text3)">—</span>'}</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${hrs} hrs</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${free} hrs</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--amber)">${doHrs} hrs</td>
@@ -598,21 +608,32 @@ function renderTaskToday(){
   document.getElementById('ttDateLabel').textContent=td.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   const body=document.getElementById('taskTodayBody');
 
-  // Task Today logic:
-  // Must have at least one date. receiveDate<=today (if set). deadlineInternal>=today (if set).
+  // Task Today: iterate sub-tasks, filter by startedDate <= today <= deadlineInternal
+  // Parse date strings as local (YYYY-MM-DD) to avoid UTC offset bug
+  function parseLocalDate(str){ if(!str)return null; const[y,m,d]=str.split('-').map(Number); return new Date(y,m-1,d); }
   let rows=[];
   jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
-    const rd=c.receiveDate?new Date(c.receiveDate):null;
-    const di=c.deadlineInternal?new Date(c.deadlineInternal):null;
-    if(!rd&&!di) return; // no dates = not schedulable, skip
-    if(rd&&rd>td) return; // not received yet
-    if(di&&di<td) return; // deadline already passed
-    if(c.name||c.assignee){
-      rows.push({...c,jobName:j.tabTitle,jobId:j.id,motherId:m.id,motherName:m.name});
-    }
+    (c.subtasks||[]).forEach(s=>{
+      const sd = s.startedDate||s.receiveDate;
+      const rd = parseLocalDate(sd);
+      const di = parseLocalDate(s.deadlineInternal);
+      if(!rd&&!di) return; // no dates — skip
+      if(rd&&rd>td) return; // not started yet
+      if(di&&di<td) return; // past deadline
+      rows.push({
+        ...s,
+        subtaskName: s.name,
+        jobName: j.tabTitle,
+        jobId: j.id,
+        motherId: m.id,
+        childId: c.id,
+        childName: c.name,
+        format: c.format
+      });
+    });
   })));
 
-  // Group by member name (sorted alphabetically)
+  // Group by member (sub-task assignee), sorted alphabetically
   const byMem={};
   rows.forEach(r=>{
     const mem=members.find(m=>m.id===r.assignee);
@@ -633,22 +654,18 @@ function renderTaskToday(){
       <div class="tt-member-hdr" onclick="toggleTTMember(this)">
         <div class="avatar">${getInitials(memName)}</div>
         <span style="font-weight:600;font-size:14px">${memName}</span>
-        <span style="font-size:11px;color:var(--text3);margin-left:auto;font-family:var(--mono)">${tasks.length} task${tasks.length!==1?'s':''}</span>
+        <span style="font-size:11px;color:var(--text3);margin-left:auto;font-family:var(--mono)">${tasks.length} sub-task${tasks.length!==1?'s':''}</span>
       </div>
       <div class="tt-body">
-        ${tasks.map(c=>{
-          const stList=(c.subtasks||[]).map(s=>`
-            <div class="tt-job-row tt-indent2">
-              ↳ <button class="tt-link" onclick="jumpTo('${c.jobId}','${c.motherId}','${c.id}','${s.id}')">${s.name||'(unnamed subtask)'}</button>
-              ${s.progress?`<span class="badge ${s.progress==='done'?'bg-green':s.progress==='inprogress'?'bg-blue':'bg-red'}" style="margin-left:6px;font-size:10px">${s.progress==='inprogress'?'In Progress':s.progress==='done'?'Done':'Closed'}</span>`:''}
-            </div>`).join('');
+        ${tasks.map(s=>{
+          const progBadge=s.progress?`<span class="badge ${s.progress==='done'?'bg-green':s.progress==='inprogress'?'bg-blue':'bg-red'}" style="margin-left:6px;font-size:10px">${s.progress==='inprogress'?'In Progress':s.progress==='done'?'Done':'Closed'}</span>`:'';
+          const fmtTag=s.format?`<span style="font-size:10px;color:var(--text3);margin-left:6px">[${s.format}]</span>`:'';
           return`<div class="tt-job-row">
-            <button class="tt-link" onclick="jumpTo('${c.jobId}','${c.motherId}','${c.id}',null)">
-              ${c.jobName}${c.name?' → '+c.name:''}
+            <button class="tt-link" onclick="jumpTo('${s.jobId}','${s.motherId}','${s.childId}','${s.id}')">
+              ${s.jobName}${s.childName?' → '+s.childName:''}${s.subtaskName?' → '+s.subtaskName:''}
             </button>
-            ${c.format?`<span style="font-size:10px;color:var(--text3);margin-left:6px">[${c.format}]</span>`:''}
-            ${c.progress?`<span class="badge ${c.progress==='done'?'bg-green':c.progress==='inprogress'?'bg-blue':'bg-red'}" style="margin-left:6px;font-size:10px">${c.progress==='inprogress'?'In Progress':c.progress==='done'?'Done':'Closed'}</span>`:''}
-          </div>${stList}`;
+            ${fmtTag}${progBadge}
+          </div>`;
         }).join('')}
       </div>
     </div>`;
@@ -869,7 +886,7 @@ function motherHTML(jobId,mother){
       <div class="child-table-wrap">
         <table class="child-table">
           <thead><tr>
-            <th>#</th><th>Sub-job</th><th>Format</th><th>Assignee</th><th></th>
+            <th>#</th><th>Sub-job</th><th>Format</th><th>Assignee</th><th>Progress</th><th></th>
           </tr></thead>
           <tbody id="children-${mother.id}">
             ${[...mother.children].reverse().map((c,i)=>childRowHTML(jobId,mother.id,c,mother.children.length-i)).join('')}
@@ -906,6 +923,14 @@ function childRowHTML(jobId,motherId,child,idx){
         <div class="asgn-dd" id="ad-${child.id}"></div>
       </div>
     </td>
+    <td>
+      <select class="prog-sel ${pClass(child.progress)}" id="cp-${child.id}" onchange="setChildProgress('${jobId}','${motherId}','${child.id}',this.value)">
+        <option value="" ${!child.progress?'selected':''}>—</option>
+        <option value="inprogress" ${child.progress==='inprogress'?'selected':''}>In Progress</option>
+        <option value="done"       ${child.progress==='done'?'selected':''}>Done</option>
+        <option value="closed"     ${child.progress==='closed'?'selected':''}>Closed</option>
+      </select>
+    </td>
     <td><button class="del-btn" onclick="removeChild('${motherId}','${child.id}')">✕</button></td>
   </tr>`;
 }
@@ -919,7 +944,7 @@ function subtaskHTML(motherId,childId,s){
         <tr>
           <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:150px">Sub-task</th>
           <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:130px">Assignee</th>
-          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:125px">Received</th>
+          <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:125px">Started Date</th>
           <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:125px">Int. Deadline</th>
           <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:125px">Acct. Deadline</th>
           <th style="color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);width:65px">Hours</th>
@@ -940,7 +965,7 @@ function subtaskHTML(motherId,childId,s){
               <div class="asgn-dd" id="stad-${s.id}"></div>
             </div>
           </td>
-          <td style="padding:3px 6px"><input class="ci" type="date" style="font-size:11px" value="${s.receiveDate||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','receiveDate',this.value)"></td>
+          <td style="padding:3px 6px"><input class="ci" type="date" style="font-size:11px" value="${s.startedDate||s.receiveDate||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','startedDate',this.value)"></td>
           <td style="padding:3px 6px"><input class="ci" type="date" style="font-size:11px" value="${s.deadlineInternal||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','deadlineInternal',this.value);refreshStRating('${s.id}','${motherId}','${childId}')"></td>
           <td style="padding:3px 6px"><input class="ci" type="date" style="font-size:11px" value="${s.deadlineAccount||''}" onchange="updateSubtask('${motherId}','${childId}','${s.id}','deadlineAccount',this.value);refreshStRating('${s.id}','${motherId}','${childId}')"></td>
           <td style="padding:3px 6px"><input class="ci" type="number" min="0" step="0.5" style="font-size:11px;min-width:50px" value="${s.hours||''}" placeholder="hrs" oninput="updateSubtask('${motherId}','${childId}','${s.id}','hours',this.value)"></td>
@@ -1054,7 +1079,7 @@ function removeMother(jid,mid){
 function addChild(jid,mid){
   jobs.forEach(j=>{
     const m=j.mothers.find(m=>m.id===mid);if(!m)return;
-    const child={id:uid(),name:'',assignee:'',format:'',receiveDate:'',deadlineInternal:'',deadlineAccount:'',hours:'',progress:'',subtasks:[]};
+    const child={id:uid(),name:'',assignee:'',format:'',startedDate:'',deadlineInternal:'',deadlineAccount:'',hours:'',progress:'',subtasks:[]};
     m.children.push(child);
     const tbody=document.getElementById('children-'+mid);if(!tbody)return;
     // newest on top
