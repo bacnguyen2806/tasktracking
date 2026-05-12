@@ -253,7 +253,7 @@ select.ci{cursor:pointer;color-scheme:dark}
 <!-- TABS BAR -->
 <div class="tabs-bar" id="tabsBar">
   <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview',this)">📊 Overview</button>
-  <button class="tab-btn" data-tab="tasktoday" onclick="switchTab('tasktoday',this)">✅ Task Today</button>
+  <button class="tab-btn" data-tab="tasktoday" onclick="switchTab('tasktoday',this)">📅 Calendar</button>
   <div class="archive-tab-wrap" id="archiveWrap">
     <button class="archive-btn" id="archiveBtn" onclick="toggleArchiveDropdown()">…</button>
     <div class="archive-dropdown" id="archiveDropdown"></div>
@@ -312,13 +312,30 @@ select.ci{cursor:pointer;color-scheme:dark}
 
   <!-- TASK TODAY -->
   <div class="tab-panel" id="tab-tasktoday">
-    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="font-size:16px;font-weight:600;margin-right:4px">📅 Calendar</div>
+      <select class="member-select" id="ttMemberFilter" onchange="renderTaskToday()">
+        <option value="">— Select member —</option>
+      </select>
+      <div style="margin-left:auto;font-size:12px;color:var(--text2)" id="ttDateLabel"></div>
+    </div>
+    <!-- Two columns: Today list + Month calendar -->
+    <div style="display:grid;grid-template-columns:320px 1fr;gap:20px;align-items:start" id="ttGrid">
+      <!-- Today -->
       <div>
-        <div style="font-size:16px;font-weight:600">✅ Task Today</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:2px" id="ttDateLabel"></div>
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);margin-bottom:10px">Today</div>
+        <div id="ttTodayList"></div>
+      </div>
+      <!-- Calendar -->
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <button class="btn btn-ghost btn-sm" onclick="ttCalPrev()">‹</button>
+          <div style="font-size:14px;font-weight:600;flex:1;text-align:center" id="ttCalTitle"></div>
+          <button class="btn btn-ghost btn-sm" onclick="ttCalNext()">›</button>
+        </div>
+        <div id="ttCalendar"></div>
       </div>
     </div>
-    <div id="taskTodayBody"></div>
   </div>
 
 </div><!-- /main -->
@@ -603,73 +620,135 @@ function renderOverview(){
 // ═══════════════════════════════════
 //  TASK TODAY TAB
 // ═══════════════════════════════════
+let ttCalYear=0, ttCalMonth=0;
+
+function parseLocalDate(str){if(!str)return null;const[y,m,d]=str.split('-').map(Number);return new Date(y,m-1,d);}
+
+function getAllSubtasks(){
+  const rows=[];
+  jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
+    (c.subtasks||[]).forEach(s=>{
+      rows.push({...s,subtaskName:s.name,jobName:j.tabTitle,jobId:j.id,motherId:m.id,childId:c.id,childName:c.name,format:c.format});
+    });
+  })));
+  return rows;
+}
+
+function taskPillHTML(s){
+  const progBadge=s.progress?`<span class="badge ${s.progress==='done'?'bg-green':s.progress==='inprogress'?'bg-blue':'bg-red'}" style="margin-left:5px;font-size:10px">${s.progress==='inprogress'?'In Progress':s.progress==='done'?'Done':'Closed'}</span>`:'';
+  const fmtTag=s.format?`<span style="font-size:10px;color:var(--text3);margin-left:5px">[${s.format}]</span>`:'';
+  return`<div class="tt-job-row">
+    <button class="tt-link" onclick="jumpTo('${s.jobId}','${s.motherId}','${s.childId}','${s.id}')">
+      ${s.jobName}${s.childName?' → '+s.childName:''}${s.subtaskName?' → '+s.subtaskName:''}
+    </button>${fmtTag}${progBadge}
+  </div>`;
+}
+
 function renderTaskToday(){
   const td=today0();
   document.getElementById('ttDateLabel').textContent=td.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  const body=document.getElementById('taskTodayBody');
 
-  // Task Today: iterate sub-tasks, filter by startedDate <= today <= deadlineInternal
-  // Parse date strings as local (YYYY-MM-DD) to avoid UTC offset bug
-  function parseLocalDate(str){ if(!str)return null; const[y,m,d]=str.split('-').map(Number); return new Date(y,m-1,d); }
-  let rows=[];
-  jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
-    (c.subtasks||[]).forEach(s=>{
-      const sd = s.startedDate||s.receiveDate;
-      const rd = parseLocalDate(sd);
-      const di = parseLocalDate(s.deadlineInternal);
-      if(!rd&&!di) return; // no dates — skip
-      if(rd&&rd>td) return; // not started yet
-      if(di&&di<td) return; // past deadline
-      rows.push({
-        ...s,
-        subtaskName: s.name,
-        jobName: j.tabTitle,
-        jobId: j.id,
-        motherId: m.id,
-        childId: c.id,
-        childName: c.name,
-        format: c.format
-      });
-    });
-  })));
+  // init calendar to current month if first load
+  if(!ttCalYear){ttCalYear=td.getFullYear();ttCalMonth=td.getMonth();}
 
-  // Group by member (sub-task assignee), sorted alphabetically
-  const byMem={};
-  rows.forEach(r=>{
-    const mem=members.find(m=>m.id===r.assignee);
-    const key=mem?mem.name:'(Unassigned)';
-    if(!byMem[key])byMem[key]=[];
-    byMem[key].push(r);
-  });
+  // rebuild member filter
+  const sel=document.getElementById('ttMemberFilter');
+  const prev=sel.value;
+  sel.innerHTML='<option value="">— Select member —</option>'+
+    members.map(m=>`<option value="${m.id}" ${m.id===prev?'selected':''}>${m.name}</option>`).join('');
+  const memId=sel.value;
 
-  const sorted=Object.keys(byMem).sort((a,b)=>a.localeCompare(b));
-  if(!sorted.length){
-    body.innerHTML='<div style="color:var(--text3);text-align:center;padding:60px">No tasks scheduled for today.</div>';
+  if(!memId){
+    document.getElementById('ttTodayList').innerHTML='<div style="color:var(--text3);font-size:13px">Select a member to view tasks.</div>';
+    document.getElementById('ttCalendar').innerHTML='';
+    document.getElementById('ttCalTitle').textContent='';
     return;
   }
 
-  body.innerHTML=sorted.map(memName=>{
-    const tasks=byMem[memName];
-    return`<div class="tt-member-block">
-      <div class="tt-member-hdr" onclick="toggleTTMember(this)">
-        <div class="avatar">${getInitials(memName)}</div>
-        <span style="font-weight:600;font-size:14px">${memName}</span>
-        <span style="font-size:11px;color:var(--text3);margin-left:auto;font-family:var(--mono)">${tasks.length} sub-task${tasks.length!==1?'s':''}</span>
-      </div>
-      <div class="tt-body">
-        ${tasks.map(s=>{
-          const progBadge=s.progress?`<span class="badge ${s.progress==='done'?'bg-green':s.progress==='inprogress'?'bg-blue':'bg-red'}" style="margin-left:6px;font-size:10px">${s.progress==='inprogress'?'In Progress':s.progress==='done'?'Done':'Closed'}</span>`:'';
-          const fmtTag=s.format?`<span style="font-size:10px;color:var(--text3);margin-left:6px">[${s.format}]</span>`:'';
-          return`<div class="tt-job-row">
-            <button class="tt-link" onclick="jumpTo('${s.jobId}','${s.motherId}','${s.childId}','${s.id}')">
-              ${s.jobName}${s.childName?' → '+s.childName:''}${s.subtaskName?' → '+s.subtaskName:''}
-            </button>
-            ${fmtTag}${progBadge}
-          </div>`;
-        }).join('')}
-      </div>
+  const allST=getAllSubtasks().filter(s=>s.assignee===memId);
+
+  // ── TODAY LIST ──
+  const todayRows=allST.filter(s=>{
+    const rd=parseLocalDate(s.startedDate||s.receiveDate);
+    const di=parseLocalDate(s.deadlineInternal);
+    if(!rd&&!di)return false;
+    if(rd&&rd>td)return false;
+    if(di&&di<td)return false;
+    return true;
+  });
+  const todayEl=document.getElementById('ttTodayList');
+  todayEl.innerHTML=todayRows.length
+    ? todayRows.map(s=>taskPillHTML(s)).join('')
+    : '<div style="color:var(--text3);font-size:13px;padding:8px 0">No tasks today.</div>';
+
+  // ── MONTH CALENDAR ──
+  renderTTCalendar(allST);
+}
+
+function renderTTCalendar(allST){
+  const title=document.getElementById('ttCalTitle');
+  const cal=document.getElementById('ttCalendar');
+  const y=ttCalYear, mo=ttCalMonth;
+  title.textContent=new Date(y,mo,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+
+  const firstDay=new Date(y,mo,1).getDay(); // 0=Sun
+  const daysInMonth=new Date(y,mo+1,0).getDate();
+  const td=today0();
+
+  // group sub-tasks by their Int.Deadline date string (YYYY-MM-DD) falling in this month
+  const byDate={};
+  allST.forEach(s=>{
+    if(!s.deadlineInternal)return;
+    const d=parseLocalDate(s.deadlineInternal);
+    if(!d||d.getFullYear()!==y||d.getMonth()!==mo)return;
+    const key=s.deadlineInternal;
+    if(!byDate[key])byDate[key]=[];
+    byDate[key].push(s);
+  });
+
+  const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">`;
+  // day headers
+  dayNames.forEach(d=>{
+    html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;padding:4px 0">${d}</div>`;
+  });
+  // empty cells before first day
+  for(let i=0;i<firstDay;i++) html+=`<div style="min-height:80px"></div>`;
+  // day cells
+  for(let day=1;day<=daysInMonth;day++){
+    const dateStr=`${y}-${String(mo+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const isToday=new Date(y,mo,day).getTime()===td.getTime();
+    const tasks=byDate[dateStr]||[];
+    const bgColor=isToday?'rgba(91,138,244,0.12)':'var(--bg2)';
+    const borderColor=isToday?'var(--accent)':'var(--border)';
+    html+=`<div style="min-height:80px;background:${bgColor};border:1px solid ${borderColor};border-radius:6px;padding:5px;overflow:hidden">
+      <div style="font-size:11px;font-weight:600;color:${isToday?'var(--accent)':'var(--text2)'};margin-bottom:3px">${day}</div>
+      ${tasks.map(s=>{const fullPath=`${s.jobName}${s.childName?' → '+s.childName:''}${s.subtaskName?' → '+s.subtaskName:''}`;return`<div style="font-size:10px;background:var(--bg4);border-radius:3px;padding:2px 5px;margin-bottom:2px;cursor:pointer;color:var(--text);overflow:hidden"
+        onclick="jumpTo('${s.jobId}','${s.motherId}','${s.childId}','${s.id}')"
+      >${fullPath}</div>`;}).join('')}
     </div>`;
-  }).join('');
+  }
+  html+=`</div>`;
+  cal.innerHTML=html;
+}
+
+function ttCalPrev(){
+  ttCalMonth--;
+  if(ttCalMonth<0){ttCalMonth=11;ttCalYear--;}
+  const memId=document.getElementById('ttMemberFilter').value;
+  if(memId){
+    const allST=getAllSubtasks().filter(s=>s.assignee===memId);
+    renderTTCalendar(allST);
+  }
+}
+function ttCalNext(){
+  ttCalMonth++;
+  if(ttCalMonth>11){ttCalMonth=0;ttCalYear++;}
+  const memId=document.getElementById('ttMemberFilter').value;
+  if(memId){
+    const allST=getAllSubtasks().filter(s=>s.assignee===memId);
+    renderTTCalendar(allST);
+  }
 }
 
 function toggleTTMember(hdr){
