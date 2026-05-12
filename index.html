@@ -1088,8 +1088,43 @@ function pickAssignee(mid,cid,memId,memName){
 }
 
 // ═══════════════════════════════════
+//  PERSIST (localStorage)
+// ═══════════════════════════════════
+function saveData(){
+  try{
+    localStorage.setItem('tt_members', JSON.stringify(members));
+    localStorage.setItem('tt_dayoffs', JSON.stringify(dayoffs));
+    localStorage.setItem('tt_jobs',    JSON.stringify(jobs));
+    localStorage.setItem('tt_tabCounter', tabCounter);
+  }catch(e){console.warn('Save failed',e)}
+}
+
+function loadData(){
+  try{
+    const m=localStorage.getItem('tt_members');  if(m) members=JSON.parse(m);
+    const d=localStorage.getItem('tt_dayoffs');  if(d) dayoffs=JSON.parse(d);
+    const j=localStorage.getItem('tt_jobs');     if(j) jobs=JSON.parse(j);
+    const tc=localStorage.getItem('tt_tabCounter'); if(tc) tabCounter=parseInt(tc)||0;
+  }catch(e){console.warn('Load failed',e)}
+}
+
+// ═══════════════════════════════════
 //  INIT
 // ═══════════════════════════════════
+loadData();
+// Rebuild job tabs from saved data
+jobs.forEach(job=>{
+  const tabsBar=document.getElementById('tabsBar');
+  const addBtn=tabsBar.querySelector('.tab-add-btn');
+  const btn=createDraggableTabBtn(job.id,job.tabTitle);
+  tabsBar.insertBefore(btn,addBtn);
+  const panel=document.createElement('div');
+  panel.className='tab-panel';
+  panel.id='tab-'+job.id;
+  panel.innerHTML=renderJobPanel(job);
+  document.querySelector('.main').appendChild(panel);
+});
+buildArchiveList();
 renderOverview();
 </script>
 </body>
