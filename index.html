@@ -221,14 +221,12 @@ select.ci{cursor:pointer;color-scheme:dark}
 </head>
 <body>
 
-<!-- HEADER -->
 <div class="header">
   <div class="logo">task<span>tracker</span></div>
   <button class="manage-btn" onclick="openDayoffModal()">📅 Day-Off</button>
   <button class="manage-btn" onclick="openMembersModal()">👥 Members</button>
 </div>
 
-<!-- MEMBERS MODAL -->
 <div class="modal-overlay" id="membersModal" onclick="if(event.target===this)closeMembersModal()">
   <div class="modal">
     <div class="modal-title">👥 Team Members <button class="modal-close" onclick="closeMembersModal()">✕</button></div>
@@ -240,7 +238,6 @@ select.ci{cursor:pointer;color-scheme:dark}
   </div>
 </div>
 
-<!-- DAY-OFF MODAL -->
 <div class="modal-overlay" id="dayoffModal" onclick="if(event.target===this)closeDayoffModal()">
   <div class="modal" style="width:520px;max-width:96vw">
     <div class="modal-title">📅 Day-Off <button class="modal-close" onclick="closeDayoffModal()">✕</button></div>
@@ -250,7 +247,6 @@ select.ci{cursor:pointer;color-scheme:dark}
   </div>
 </div>
 
-<!-- TABS BAR -->
 <div class="tabs-bar" id="tabsBar">
   <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview',this)">📊 Overview</button>
   <button class="tab-btn" data-tab="tasktoday" onclick="switchTab('tasktoday',this)">✅ Task Today</button>
@@ -261,10 +257,8 @@ select.ci{cursor:pointer;color-scheme:dark}
   <button class="tab-add-btn" onclick="addJobTab()" title="Add new job">＋</button>
 </div>
 
-<!-- MAIN -->
 <div class="main">
 
-  <!-- OVERVIEW -->
   <div class="tab-panel active" id="tab-overview">
     <div class="overview-controls">
       <div class="filter-group">
@@ -311,7 +305,6 @@ select.ci{cursor:pointer;color-scheme:dark}
     </div>
   </div>
 
-  <!-- TASK TODAY -->
   <div class="tab-panel" id="tab-tasktoday">
     <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div>
@@ -322,9 +315,7 @@ select.ci{cursor:pointer;color-scheme:dark}
     <div id="taskTodayBody"></div>
   </div>
 
-</div><!-- /main -->
-
-<script>
+</div><script>
 // ═══════════════════════════════════
 //  STATE
 // ═══════════════════════════════════
@@ -414,13 +405,22 @@ function addMember(){
   const inp=document.getElementById('newMemberInput');
   const name=inp.value.trim();if(!name)return;
   members.push({id:uid(),name});inp.value='';renderMemberList();inp.focus();
+  saveData();
+  renderOverview();
 }
 function renameMember(id,val){
   const m=members.find(m=>m.id===id);if(!m)return;
   m.name=val;
   const av=document.querySelector(`#mitem-${id} .mem-av`);if(av)av.textContent=getInitials(val);
+  saveData();
+  renderOverview();
 }
-function deleteMember(id){members=members.filter(m=>m.id!==id);renderMemberList()}
+function deleteMember(id){
+  members=members.filter(m=>m.id!==id);
+  renderMemberList();
+  saveData();
+  renderOverview();
+}
 
 // ═══════════════════════════════════
 //  DAY-OFF MODAL
@@ -448,9 +448,19 @@ function renderDayoffContent(){
 function addDayoffRow(){
   dayoffs.push({id:uid(),memberId:'',date:'',hours:''});
   renderDayoffContent();
+  saveData();
 }
-function updateDayoff(id,field,val){const d=dayoffs.find(x=>x.id===id);if(d)d[field]=val}
-function removeDayoff(id){dayoffs=dayoffs.filter(x=>x.id!==id);renderDayoffContent()}
+function updateDayoff(id,field,val){
+  const d=dayoffs.find(x=>x.id===id);if(d)d[field]=val;
+  saveData();
+  renderOverview();
+}
+function removeDayoff(id){
+  dayoffs=dayoffs.filter(x=>x.id!==id);
+  renderDayoffContent();
+  saveData();
+  renderOverview();
+}
 
 // Day-off hours for a member in a date range
 function dayoffInRange(memberId,from,to){
@@ -665,6 +675,7 @@ function addJobTab(title){
   jobs.push(job);
   insertJobTab(job);
   buildArchiveList();
+  saveData();
 }
 
 function insertJobTab(job){
@@ -702,6 +713,7 @@ function createDraggableTabBtn(id,label){
     if(si<ti)bar.insertBefore(dragSrcTab,btn.nextSibling);else bar.insertBefore(dragSrcTab,btn);
     const j=jobs.splice(si,1)[0];
     jobs.splice(ti,0,j);
+    saveData();
   });
   btn.addEventListener('dragend',()=>{document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('drag-over'));dragSrcTab=null});
   return btn;
@@ -715,6 +727,7 @@ function removeJobTab(id,e){
   document.querySelector(`[data-tab="${id}"]`)?.remove();
   buildArchiveList();
   switchTab('overview',document.querySelector('[data-tab="overview"]'));
+  saveData();
 }
 
 // ── Archive / "…" tab ──
@@ -802,6 +815,7 @@ function setJobStatus(jobId,val){
   // update tab label colour
   const tabBtn=document.querySelector(`[data-tab="${jobId}"] .tab-label`);
   if(tabBtn){tabBtn.style.color=val==='closed'?'var(--red)':val==='inprogress'?'var(--accent)':''}
+  saveData();
 }
 
 // Description
@@ -809,7 +823,10 @@ function editDesc(jobId){
   document.getElementById('dr-'+jobId).style.display='none';
   const ta=document.getElementById('da-'+jobId);ta.style.display='block';ta.focus();
 }
-function updateDesc(jobId,val){const j=jobs.find(j=>j.id===jobId);if(j)j.description=val}
+function updateDesc(jobId,val){
+  const j=jobs.find(j=>j.id===jobId);if(j)j.description=val;
+  saveData();
+}
 function saveDesc(jobId){
   const j=jobs.find(j=>j.id===jobId);if(!j)return;
   const ta=document.getElementById('da-'+jobId);ta.style.display='none';
@@ -920,13 +937,19 @@ function updateJobTitle(jobId,val){
   job.tabTitle=val;
   const lbl=document.querySelector(`[data-tab="${jobId}"] .tab-label`);if(lbl)lbl.textContent=val;
   const nm=document.getElementById('jpname-'+jobId);if(nm)nm.textContent=val;
+  saveData();
 }
-function updateMotherName(mid,val){jobs.forEach(j=>{const m=j.mothers.find(m=>m.id===mid);if(m)m.name=val})}
+function updateMotherName(mid,val){
+  jobs.forEach(j=>{const m=j.mothers.find(m=>m.id===mid);if(m)m.name=val});
+  saveData();
+}
 function updateChild(mid,cid,field,val){
   jobs.forEach(j=>{const m=j.mothers.find(m=>m.id===mid);if(!m)return;const c=m.children.find(c=>c.id===cid);if(c)c[field]=val});
+  saveData();
 }
 function updateSubtask(mid,cid,sid,field,val){
   jobs.forEach(j=>{const m=j.mothers.find(m=>m.id===mid);if(!m)return;const c=m.children.find(c=>c.id===cid);if(!c)return;const s=(c.subtasks||[]).find(s=>s.id===sid);if(s)s[field]=val});
+  saveData();
 }
 
 function toggleMother(mid){document.getElementById('mother-'+mid)?.classList.toggle('collapsed')}
@@ -941,6 +964,7 @@ function setSubtaskProgress(mid,cid,sid,val){
     const el=document.getElementById('stp-'+sid);if(el){el.className='prog-sel '+pClass(val);el.style.fontSize='10px';el.style.padding='2px 5px'}
     checkAutoChild(j.id,mid,cid);
   });
+  saveData();
 }
 function setChildProgress(jid,mid,cid,val){
   jobs.forEach(j=>{
@@ -951,6 +975,7 @@ function setChildProgress(jid,mid,cid,val){
     const el=document.getElementById('cp-'+cid);if(el)el.className='prog-sel '+pClass(val);
     checkAutoMother(jid,mid);
   });
+  saveData();
 }
 function setMotherProgress(jid,mid,val){
   jobs.forEach(j=>{
@@ -959,6 +984,7 @@ function setMotherProgress(jid,mid,val){
     m.progress=val;
     const el=document.getElementById('mp-'+mid);if(el)el.className='prog-sel '+pClass(val);
   });
+  saveData();
 }
 function checkAutoChild(jid,mid,cid){
   jobs.forEach(j=>{
@@ -991,12 +1017,14 @@ function addMother(jobId){
   const div=document.createElement('div');
   div.innerHTML=motherHTML(jobId,mother);
   wrap.appendChild(div.firstChild);
+  saveData();
 }
 function removeMother(jid,mid){
   if(!confirm('Delete this parent job?'))return;
   const job=jobs.find(j=>j.id===jid);if(!job)return;
   job.mothers=job.mothers.filter(m=>m.id!==mid);
   document.getElementById('mother-'+mid)?.remove();
+  saveData();
 }
 
 function addChild(jid,mid){
@@ -1012,6 +1040,7 @@ function addChild(jid,mid){
     const countEl=document.querySelector(`#mother-${mid} .job-count`);
     if(countEl)countEl.textContent=m.children.length+' tasks';
   });
+  saveData();
 }
 function removeChild(mid,cid){
   jobs.forEach(j=>{
@@ -1021,6 +1050,7 @@ function removeChild(mid,cid){
     const countEl=document.querySelector(`#mother-${mid} .job-count`);
     if(countEl)countEl.textContent=m.children.length+' tasks';
   });
+  saveData();
 }
 
 function addSubtask(jid,mid,cid){
@@ -1035,6 +1065,7 @@ function addSubtask(jid,mid,cid){
     div.innerHTML=subtaskHTML(mid,cid,s);
     list.insertBefore(div.firstChild,list.firstChild); // newest on top
   });
+  saveData();
 }
 function removeSubtask(mid,cid,sid){
   jobs.forEach(j=>{
@@ -1043,6 +1074,7 @@ function removeSubtask(mid,cid,sid){
     c.subtasks=(c.subtasks||[]).filter(s=>s.id!==sid);
     document.getElementById('st-'+sid)?.remove();
   });
+  saveData();
 }
 
 // RATING
@@ -1085,6 +1117,7 @@ function pickAssignee(mid,cid,memId,memName){
   updateChild(mid,cid,'assignee',memId);
   const inp=document.getElementById('ai-'+cid);if(inp)inp.value=memName;
   document.getElementById('ad-'+cid)?.classList.remove('open');
+  saveData();
 }
 
 // ═══════════════════════════════════
