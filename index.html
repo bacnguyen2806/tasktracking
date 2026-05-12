@@ -287,7 +287,7 @@ select.ci{cursor:pointer;color-scheme:dark}
         <thead><tr>
           <th>Member</th>
           <th>Tasks</th>
-          <th colspan="3">Workload</th>
+          <th colspan="4">Workload</th>
           <th colspan="5">Format</th>
           <th colspan="3">Review</th>
         </tr>
@@ -296,6 +296,7 @@ select.ci{cursor:pointer;color-scheme:dark}
           <th style="background:var(--bg4)">Booked</th>
           <th style="background:var(--bg4)">Free</th>
           <th style="background:var(--bg4)">Day-Off</th>
+          <th style="background:var(--bg4);color:var(--red)">OT</th>
           <th style="background:var(--bg4);font-size:10px">Key Visual</th>
           <th style="background:var(--bg4);font-size:10px">Single</th>
           <th style="background:var(--bg4);font-size:10px">Multi</th>
@@ -479,8 +480,8 @@ function addDayoffRow(){
   dayoffs.push({id:uid(),memberId:'',date:'',hours:''});
   renderDayoffContent();
 }
-function updateDayoff(id,field,val){const d=dayoffs.find(x=>x.id===id);if(d)d[field]=val}
-function removeDayoff(id){dayoffs=dayoffs.filter(x=>x.id!==id);renderDayoffContent()}
+function updateDayoff(id,field,val){const d=dayoffs.find(x=>x.id===id);if(d){d[field]=val;saveData();if(document.getElementById('tab-overview').classList.contains('active'))renderOverview();}}
+function removeDayoff(id){dayoffs=dayoffs.filter(x=>x.id!==id);renderDayoffContent();saveData();if(document.getElementById('tab-overview').classList.contains('active'))renderOverview();}
 
 // Day-off hours for a member in a date range
 function dayoffInRange(memberId,from,to){
@@ -581,7 +582,7 @@ function renderOverview(){
   if(unassigned.length) byMem['_unassigned']={member:{id:'_unassigned',name:'(Unassigned)'},tasks:unassigned};
 
   if(!Object.keys(byMem).length){
-    tbody.innerHTML=`<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--text3)">No data for this period.</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="14" style="text-align:center;padding:40px;color:var(--text3)">No data for this period.</td></tr>`;
     return;
   }
 
@@ -591,6 +592,7 @@ function renderOverview(){
     const hrs   = mySTs.reduce((s,x)=>s+(parseFloat(x.hours)||0),0);
     const doHrs = from&&to?dayoffInRange(member.id,from,to):0;
     const free  = from&&to?calcFreeHours(member.id,from,to,hrs):0;
+    const ot    = Math.max(0, hrs - free - doHrs);
     const earlier = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Earlier').length;
     const ontime  = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='On-time').length;
     const late    = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Late').length;
@@ -609,6 +611,7 @@ function renderOverview(){
       <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${hrs} hrs</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${free} hrs</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--amber)">${doHrs} hrs</td>
+      <td style="font-family:var(--mono);font-size:12px;color:${ot>0?'var(--red)':'var(--text3)'}">${ot>0?ot+' hrs':'—'}</td>
       ${['Key Visual','Single','Multi','Video','Set Banners'].map(f=>`<td style="text-align:center;font-family:var(--mono);font-size:12px;color:${fc[f]?'var(--text)':'var(--text3)'}">${fc[f]||'—'}</td>`).join('')}
       <td><span class="badge bg-green">${earlier}</span></td>
       <td><span class="badge bg-amber">${ontime}</span></td>
@@ -862,11 +865,11 @@ function buildArchiveList(){
 
 function toggleArchiveDropdown(){
   const dd=document.getElementById('archiveDropdown');
-  const isOpen=dd.classList.contains('open');
-  if(isOpen){closeArchiveDropdown();return;}
+  if(dd.classList.contains('open')){closeArchiveDropdown();return;}
   renderArchiveDropdown();
   dd.classList.add('open');
-  document.addEventListener('click',archiveOutsideClick,{once:true});
+  // close on outside click — defer so this click doesn't immediately close it
+  setTimeout(()=>document.addEventListener('click',archiveOutsideClick,{once:true}),0);
 }
 function closeArchiveDropdown(){document.getElementById('archiveDropdown').classList.remove('open')}
 function archiveOutsideClick(e){
@@ -928,6 +931,7 @@ function setJobStatus(jobId,val){
   const sel=document.getElementById('jstatus-'+jobId);
   if(sel)sel.className='status-select'+(val==='inprogress'?' st-inprogress':val==='closed'?' st-closed':'');
   buildArchiveList();
+  saveDataNow();
   // update tab label colour
   const tabBtn=document.querySelector(`[data-tab="${jobId}"] .tab-label`);
   if(tabBtn){tabBtn.style.color=val==='closed'?'var(--red)':val==='inprogress'?'var(--accent)':''}
@@ -938,7 +942,7 @@ function editDesc(jobId){
   document.getElementById('dr-'+jobId).style.display='none';
   const ta=document.getElementById('da-'+jobId);ta.style.display='block';ta.focus();
 }
-function updateDesc(jobId,val){const j=jobs.find(j=>j.id===jobId);if(j)j.description=val}
+function updateDesc(jobId,val){const j=jobs.find(j=>j.id===jobId);if(j){j.description=val;saveData();}}
 function saveDesc(jobId){
   const j=jobs.find(j=>j.id===jobId);if(!j)return;
   const ta=document.getElementById('da-'+jobId);ta.style.display='none';
@@ -1076,13 +1080,16 @@ function updateJobTitle(jobId,val){
   job.tabTitle=val;
   const lbl=document.querySelector(`[data-tab="${jobId}"] .tab-label`);if(lbl)lbl.textContent=val;
   const nm=document.getElementById('jpname-'+jobId);if(nm)nm.textContent=val;
+  saveData();
 }
-function updateMotherName(mid,val){jobs.forEach(j=>{const m=j.mothers.find(m=>m.id===mid);if(m)m.name=val})}
+function updateMotherName(mid,val){jobs.forEach(j=>{const m=j.mothers.find(m=>m.id===mid);if(m)m.name=val});saveData();}
 function updateChild(mid,cid,field,val){
   jobs.forEach(j=>{const m=j.mothers.find(m=>m.id===mid);if(!m)return;const c=m.children.find(c=>c.id===cid);if(c)c[field]=val});
+  saveData();
 }
 function updateSubtask(mid,cid,sid,field,val){
   jobs.forEach(j=>{const m=j.mothers.find(m=>m.id===mid);if(!m)return;const c=m.children.find(c=>c.id===cid);if(!c)return;const s=(c.subtasks||[]).find(s=>s.id===sid);if(s)s[field]=val});
+  saveData();
 }
 
 function toggleMother(mid){document.getElementById('mother-'+mid)?.classList.toggle('collapsed')}
@@ -1106,6 +1113,7 @@ function setChildProgress(jid,mid,cid,val){
     c.progress=val;
     const el=document.getElementById('cp-'+cid);if(el)el.className='prog-sel '+pClass(val);
     checkAutoMother(jid,mid);
+    saveData();
   });
 }
 function setMotherProgress(jid,mid,val){
@@ -1114,6 +1122,7 @@ function setMotherProgress(jid,mid,val){
     const m=j.mothers.find(m=>m.id===mid);if(!m)return;
     m.progress=val;
     const el=document.getElementById('mp-'+mid);if(el)el.className='prog-sel '+pClass(val);
+    saveData();
   });
 }
 function checkAutoChild(jid,mid,cid){
@@ -1153,6 +1162,7 @@ function removeMother(jid,mid){
   const job=jobs.find(j=>j.id===jid);if(!job)return;
   job.mothers=job.mothers.filter(m=>m.id!==mid);
   document.getElementById('mother-'+mid)?.remove();
+  saveData();
 }
 
 function addChild(jid,mid){
@@ -1167,6 +1177,7 @@ function addChild(jid,mid){
     tbody.insertBefore(dummy.querySelector('tr'),tbody.firstChild);
     const countEl=document.querySelector(`#mother-${mid} .job-count`);
     if(countEl)countEl.textContent=m.children.length+' tasks';
+    saveData();
   });
 }
 function removeChild(mid,cid){
@@ -1176,6 +1187,7 @@ function removeChild(mid,cid){
     document.getElementById('row-'+cid)?.remove();
     const countEl=document.querySelector(`#mother-${mid} .job-count`);
     if(countEl)countEl.textContent=m.children.length+' tasks';
+    saveData();
   });
 }
 
@@ -1190,6 +1202,7 @@ function addSubtask(jid,mid,cid){
     const div=document.createElement('div');
     div.innerHTML=subtaskHTML(mid,cid,s);
     list.insertBefore(div.firstChild,list.firstChild); // newest on top
+    saveData();
   });
 }
 function removeSubtask(mid,cid,sid){
@@ -1198,6 +1211,7 @@ function removeSubtask(mid,cid,sid){
     const c=m.children.find(c=>c.id===cid);if(!c)return;
     c.subtasks=(c.subtasks||[]).filter(s=>s.id!==sid);
     document.getElementById('st-'+sid)?.remove();
+    saveData();
   });
 }
 
@@ -1282,42 +1296,54 @@ function refreshStRating(sid,mid,cid){
 // ═══════════════════════════════════
 //  PERSIST (localStorage)
 // ═══════════════════════════════════
+// ── Debounced save (avoids too many writes while typing) ──
+let _saveTimer=null;
 function saveData(){
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(()=>_doSave(),600);
+}
+function saveDataNow(){clearTimeout(_saveTimer);_doSave();}
+async function _doSave(){
   try{
-    localStorage.setItem('tt_members', JSON.stringify(members));
-    localStorage.setItem('tt_dayoffs', JSON.stringify(dayoffs));
-    localStorage.setItem('tt_jobs',    JSON.stringify(jobs));
-    localStorage.setItem('tt_tabCounter', tabCounter);
+    const payload=JSON.stringify({members,dayoffs,jobs,tabCounter});
+    await window.storage.set('tt_data',payload,true);
   }catch(e){console.warn('Save failed',e)}
 }
 
-function loadData(){
+async function loadData(){
   try{
-    const m=localStorage.getItem('tt_members');  if(m) members=JSON.parse(m);
-    const d=localStorage.getItem('tt_dayoffs');  if(d) dayoffs=JSON.parse(d);
-    const j=localStorage.getItem('tt_jobs');     if(j) jobs=JSON.parse(j);
-    const tc=localStorage.getItem('tt_tabCounter'); if(tc) tabCounter=parseInt(tc)||0;
-  }catch(e){console.warn('Load failed',e)}
+    const res=await window.storage.get('tt_data',true);
+    if(res&&res.value){
+      const d=JSON.parse(res.value);
+      if(d.members)    members=d.members;
+      if(d.dayoffs)    dayoffs=d.dayoffs;
+      if(d.jobs)       jobs=d.jobs;
+      if(d.tabCounter) tabCounter=d.tabCounter;
+    }
+  }catch(e){console.warn('Load failed or no data yet',e)}
 }
 
 // ═══════════════════════════════════
 //  INIT
 // ═══════════════════════════════════
-loadData();
-// Rebuild job tabs from saved data
-jobs.forEach(job=>{
-  const tabsBar=document.getElementById('tabsBar');
-  const addBtn=tabsBar.querySelector('.tab-add-btn');
-  const btn=createDraggableTabBtn(job.id,job.tabTitle);
-  tabsBar.insertBefore(btn,addBtn);
-  const panel=document.createElement('div');
-  panel.className='tab-panel';
-  panel.id='tab-'+job.id;
-  panel.innerHTML=renderJobPanel(job);
-  document.querySelector('.main').appendChild(panel);
-});
-buildArchiveList();
-renderOverview();
+(async()=>{
+  await loadData();
+  // Rebuild job tabs from saved data
+  jobs.forEach(job=>{
+    const tabsBar=document.getElementById('tabsBar');
+    const addBtn=tabsBar.querySelector('.tab-add-btn');
+    const btn=createDraggableTabBtn(job.id,job.tabTitle);
+    tabsBar.insertBefore(btn,addBtn);
+    const panel=document.createElement('div');
+    panel.className='tab-panel';
+    panel.id='tab-'+job.id;
+    panel.innerHTML=renderJobPanel(job);
+    document.querySelector('.main').appendChild(panel);
+  });
+  buildArchiveList();
+  rebuildMemberFilter();
+  renderOverview();
+})();
 </script>
 </body>
 </html>
