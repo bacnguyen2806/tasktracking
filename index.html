@@ -224,7 +224,8 @@ select.ci{cursor:pointer;color-scheme:dark}
 <!-- HEADER -->
 <div class="header">
   <div class="logo">task<span>tracker</span></div>
-  <span id="saveStatus" style="font-size:11px;font-family:var(--mono);transition:color .3s;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+  <span id="saveStatus" style="font-size:11px;font-family:var(--mono);transition:color .3s;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+  <button class="manage-btn" id="saveBtn" onclick="manualSave()" style="border-color:var(--accent);color:var(--accent)">💾 Save Data</button>
   <button class="manage-btn" onclick="openSettingsModal()">⚙️ Settings</button>
   <button class="manage-btn" onclick="openDayoffModal()">📅 Day-Off</button>
   <button class="manage-btn" onclick="openMembersModal()">👥 Members</button>
@@ -1353,16 +1354,14 @@ function setSaveStatus(msg, color){
 function _gistId()    { return GIST_ID_DEFAULT    || localStorage.getItem('tt_gist_id')    || ''; }
 function _gistToken() { return GIST_TOKEN_DEFAULT || localStorage.getItem('tt_gist_token') || ''; }
 
-function saveData(){
-  clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(()=>_doSave(), 800);
+function saveData(){ saveLocal(); }
+function saveDataNow(){ saveLocal(); }
+
+function saveLocal(){
+  try{ localStorage.setItem('tt_data_local', JSON.stringify({members,dayoffs,jobs,tabCounter})); }catch(e){}
 }
-function saveDataNow(){ clearTimeout(_saveTimer); _doSave(); }
 
 async function _doSave(){
-  // Always save to localStorage as instant backup
-  try{ localStorage.setItem('tt_data_local', JSON.stringify({members,dayoffs,jobs,tabCounter})); }catch(e){}
-
   const gid = _gistId(), tok = _gistToken();
   if(!gid || !tok){ setSaveStatus('', ''); return; }
 
@@ -1425,6 +1424,74 @@ async function loadData(){
     }
   }catch(e){}
 }
+
+// ═══════════════════════════════════
+//  MANUAL SAVE + AUTO POLL
+// ═══════════════════════════════════
+async function manualSave(){
+  const btn = document.getElementById('saveBtn');
+  btn.textContent = '⏳ Saving…';
+  btn.style.color = 'var(--amber)';
+  btn.disabled = true;
+  await _doSave();
+  btn.textContent = '💾 Save Data';
+  btn.disabled = false;
+  const saved = document.getElementById('saveStatus').textContent.includes('✓');
+  btn.style.color = saved ? 'var(--green)' : 'var(--accent)';
+  setTimeout(()=>{ btn.style.color = 'var(--accent)'; }, 3000);
+}
+
+// Poll Gist every 30s so other machines auto-refresh
+let _lastGistEtag = '';
+async function pollGist(){
+  const gid = _gistId(), tok = _gistToken();
+  if(!gid) return;
+  try{
+    const headers = { 'Accept': 'application/vnd.github.v3+json' };
+    if(tok) headers['Authorization'] = 'token ' + tok;
+    if(_lastGistEtag) headers['If-None-Match'] = _lastGistEtag;
+    const res = await fetch('https://api.github.com/gists/' + gid, { headers });
+    if(res.status === 304) return; // not modified
+    if(!res.ok) return;
+    const etag = res.headers.get('ETag') || '';
+    if(etag && etag === _lastGistEtag) return;
+    _lastGistEtag = etag;
+    const data = await res.json();
+    const raw = data.files?.['tasktracker.json']?.content;
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    // Only reload if data actually changed (compare via JSON)
+    const current = JSON.stringify({members,dayoffs,jobs,tabCounter});
+    const incoming = JSON.stringify({members:d.members,dayoffs:d.dayoffs,jobs:d.jobs,tabCounter:d.tabCounter});
+    if(current === incoming) return;
+    // Apply new data
+    if(d.members)    members    = d.members;
+    if(d.dayoffs)    dayoffs    = d.dayoffs;
+    if(d.jobs)       jobs       = d.jobs;
+    if(d.tabCounter) tabCounter = d.tabCounter;
+    saveLocal();
+    // Rebuild UI
+    document.querySelectorAll('.tab-panel[id^="tab-job"]').forEach(p=>p.remove());
+    document.querySelectorAll('.tab-btn[data-tab^="job"]').forEach(b=>b.remove());
+    jobs.forEach(job=>{
+      const tabsBar=document.getElementById('tabsBar');
+      const addBtn=tabsBar.querySelector('.tab-add-btn');
+      const btn=createDraggableTabBtn(job.id,job.tabTitle);
+      tabsBar.insertBefore(btn,addBtn);
+      const panel=document.createElement('div');
+      panel.className='tab-panel';
+      panel.id='tab-'+job.id;
+      panel.innerHTML=renderJobPanel(job);
+      document.querySelector('.main').appendChild(panel);
+    });
+    buildArchiveList();
+    rebuildMemberFilter();
+    renderOverview();
+    setSaveStatus('🔄 Updated from cloud', 'var(--purple)');
+    setTimeout(()=>setSaveStatus('',''),3000);
+  }catch(e){}
+}
+setInterval(pollGist, 30000);
 
 // ═══════════════════════════════════
 //  SETTINGS MODAL
