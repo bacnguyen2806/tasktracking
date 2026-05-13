@@ -256,25 +256,24 @@ select.ci{cursor:pointer;color-scheme:dark}
 <div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)closeSettingsModal()">
   <div class="modal" style="width:480px;max-width:96vw">
     <div class="modal-title">⚙️ Settings — Cloud Storage <button class="modal-close" onclick="closeSettingsModal()">✕</button></div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.7">
-      Dữ liệu được lưu trên <strong style="color:var(--text)">JSONBin.io</strong> (miễn phí) — mọi người cùng link đều thấy chung dữ liệu.<br>
-      <strong style="color:var(--amber)">Bước 1:</strong> Tạo tài khoản tại <a href="https://jsonbin.io" target="_blank" style="color:var(--accent)">jsonbin.io</a> → Account → API Keys → copy Master Key.<br>
-      <strong style="color:var(--amber)">Bước 2:</strong> Dán key vào ô bên dưới và bấm Save.<br>
-      <strong style="color:var(--amber)">Bước 3:</strong> Lần đầu save data sẽ tạo Bin, Bin ID hiện ở header — copy vào ô Bin ID bên dưới và bấm Save lại.<br>
-      <strong style="color:var(--green)">Bước 4:</strong> Hardcode 2 giá trị này vào file .html trước khi share cho team.
+    <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.8">
+      Dữ liệu lưu trên <strong style="color:var(--text)">GitHub Gist</strong> — ai có link đều thấy chung dữ liệu.<br>
+      <strong style="color:var(--amber)">Bước 1:</strong> Vào <a href="https://github.com/settings/tokens" target="_blank" style="color:var(--accent)">github.com/settings/tokens</a> → Generate new token (classic) → tick <strong style="color:var(--text)">gist</strong> → Copy token.<br>
+      <strong style="color:var(--amber)">Bước 2:</strong> Vào <a href="https://gist.github.com" target="_blank" style="color:var(--accent)">gist.github.com</a> → New gist → tên file <strong style="color:var(--text)">tasktracker.json</strong>, nội dung <strong style="color:var(--text)">{}</strong> → Create → Copy ID từ URL.<br>
+      <strong style="color:var(--green)">Bước 3:</strong> Điền 2 giá trị vào bên dưới → Save & Connect.
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
       <div>
-        <div style="font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">API Master Key</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">GitHub Token</div>
         <input id="settingsKeyInput" type="password"
           style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 12px;outline:none"
-          placeholder="$2a$10$…" oninput="this.style.borderColor='var(--border2)'">
+          placeholder="ghp_xxxxxxxxxxxx" oninput="this.style.borderColor='var(--border2)'">
       </div>
       <div>
-        <div style="font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Bin ID <span style="color:var(--text3);font-weight:400">(để trống nếu chưa có, sẽ tự tạo)</span></div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Gist ID</div>
         <input id="settingsBinInput"
           style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 12px;outline:none"
-          placeholder="64f3a1b2e3…" oninput="this.style.borderColor='var(--border2)'">
+          placeholder="a1b2c3d4e5f6…" oninput="this.style.borderColor='var(--border2)'">
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
@@ -283,7 +282,7 @@ select.ci{cursor:pointer;color-scheme:dark}
       <span id="settingsStatus" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
     </div>
     <div style="margin-top:14px;padding:10px 12px;background:var(--bg3);border-radius:var(--radius);font-size:11px;color:var(--text3)">
-      Current Bin ID: <span id="currentBinId" style="color:var(--text);font-family:var(--mono)">—</span>
+      Gist ID hiện tại: <span id="currentBinId" style="color:var(--text);font-family:var(--mono)">—</span>
     </div>
   </div>
 </div>
@@ -1332,26 +1331,27 @@ function refreshStRating(sid,mid,cid){
 }
 
 // ═══════════════════════════════════
-//  STORAGE — JSONBin.io (shared, persistent, cross-device)
-//  Hướng dẫn setup:
-//  1. Tạo tài khoản miễn phí tại https://jsonbin.io
-//  2. Vào Account → API Keys → tạo key, dán vào JSONBIN_KEY bên dưới
-//  3. Lần đầu chạy sẽ tự tạo Bin, ID được lưu vào localStorage để dùng lại
+//  STORAGE — GitHub Gist (shared, persistent, cross-device)
+//  Hướng dẫn setup (1 lần duy nhất):
+//  1. Vào https://github.com/settings/tokens → Generate new token (classic)
+//     → Chỉ tick "gist" scope → Copy token
+//  2. Vào https://gist.github.com → tạo Gist mới, tên file: tasktracker.json, nội dung: {}
+//     → Copy Gist ID từ URL (phần sau gist.github.com/username/)
+//  3. Điền token + gist_id vào ⚙️ Settings trong app
 // ═══════════════════════════════════
-const JSONBIN_KEY = '$2a$10$bSogm.QlPJyvATEpM3Moqu...TguyrvEkdcxi9KL8lPkJV9VHleoa'; // JSONBin Master Key
-const JSONBIN_BIN_ID = ''; // ← SAU LẦN ĐẦU CHẠY, DÁN BIN ID VÀO ĐÂY (xem hướng dẫn)
-const JSONBIN_URL = 'https://api.jsonbin.io/v3/b';
+const GIST_ID_DEFAULT    = ''; // hardcode gist id nếu muốn
+const GIST_TOKEN_DEFAULT = ''; // hardcode token nếu muốn
 
-let _binId = JSONBIN_BIN_ID || localStorage.getItem('tt_bin_id') || '';
 let _saveTimer = null;
-let _saveStatus = ''; // for UI feedback
 
 function setSaveStatus(msg, color){
-  let el = document.getElementById('saveStatus');
+  const el = document.getElementById('saveStatus');
   if(!el) return;
   el.textContent = msg;
   el.style.color = color || 'var(--text3)';
 }
+function _gistId()    { return GIST_ID_DEFAULT    || localStorage.getItem('tt_gist_id')    || ''; }
+function _gistToken() { return GIST_TOKEN_DEFAULT || localStorage.getItem('tt_gist_token') || ''; }
 
 function saveData(){
   clearTimeout(_saveTimer);
@@ -1360,63 +1360,58 @@ function saveData(){
 function saveDataNow(){ clearTimeout(_saveTimer); _doSave(); }
 
 async function _doSave(){
-  if(!JSONBIN_KEY){
-    // fallback: localStorage only
-    try{ localStorage.setItem('tt_data_local', JSON.stringify({members,dayoffs,jobs,tabCounter})); }catch(e){}
-    return;
-  }
+  // Always save to localStorage as instant backup
+  try{ localStorage.setItem('tt_data_local', JSON.stringify({members,dayoffs,jobs,tabCounter})); }catch(e){}
+
+  const gid = _gistId(), tok = _gistToken();
+  if(!gid || !tok){ setSaveStatus('', ''); return; }
+
   setSaveStatus('Saving…', 'var(--amber)');
-  const payload = { members, dayoffs, jobs, tabCounter };
   try{
-    if(_binId){
-      // UPDATE existing bin
-      await fetch(`${JSONBIN_URL}/${_binId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type':'application/json', 'X-Master-Key': _effectiveKey() },
-        body: JSON.stringify(payload)
-      });
+    const res = await fetch('https://api.github.com/gists/' + gid, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'token ' + tok,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json'
+      },
+      body: JSON.stringify({
+        files: { 'tasktracker.json': { content: JSON.stringify({members,dayoffs,jobs,tabCounter}) } }
+      })
+    });
+    if(res.ok){
+      setSaveStatus('Saved ✓', 'var(--green)');
+      setTimeout(()=>setSaveStatus('',''), 2000);
     } else {
-      // CREATE new bin
-      const res = await fetch(JSONBIN_URL, {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json', 'X-Master-Key': _effectiveKey(), 'X-Bin-Name': 'task-tracker', 'X-Bin-Private': 'false' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      _binId = data.metadata?.id || '';
-      if(_binId){
-        localStorage.setItem('tt_bin_id', _binId);
-        console.log('%c✅ Bin created! Copy this Bin ID and paste into JSONBIN_BIN_ID in your file:', 'color:lime;font-weight:bold');
-        console.log('%c' + _binId, 'color:cyan;font-size:16px;font-weight:bold');
-        setSaveStatus('Bin ID: ' + _binId + ' (copy to file!)', 'var(--green)');
-        setTimeout(()=>setSaveStatus('', ''), 15000);
-      }
+      const err = await res.json();
+      setSaveStatus('Save failed: ' + (err.message||res.status), 'var(--red)');
     }
-    setSaveStatus('Saved ✓', 'var(--green)');
-    setTimeout(()=>setSaveStatus('', ''), 2000);
   }catch(e){
     setSaveStatus('Save failed ✗', 'var(--red)');
-    console.warn('Save failed', e);
+    console.warn('Gist save failed', e);
   }
 }
 
 async function loadData(){
-  // Try JSONBin first if key + binId exist
-  if(JSONBIN_KEY && _binId){
+  const gid = _gistId(), tok = _gistToken();
+  if(gid){
     try{
-      const res = await fetch(`${JSONBIN_URL}/${_binId}/latest`, {
-        headers: { 'X-Master-Key': _effectiveKey() }
-      });
+      const headers = { 'Accept': 'application/vnd.github.v3+json' };
+      if(tok) headers['Authorization'] = 'token ' + tok;
+      const res = await fetch('https://api.github.com/gists/' + gid, { headers });
       if(res.ok){
         const data = await res.json();
-        const d = data.record;
-        if(d.members)    members    = d.members;
-        if(d.dayoffs)    dayoffs    = d.dayoffs;
-        if(d.jobs)       jobs       = d.jobs;
-        if(d.tabCounter) tabCounter = d.tabCounter;
-        return;
+        const raw = data.files?.['tasktracker.json']?.content;
+        if(raw){
+          const d = JSON.parse(raw);
+          if(d.members)    members    = d.members;
+          if(d.dayoffs)    dayoffs    = d.dayoffs;
+          if(d.jobs)       jobs       = d.jobs;
+          if(d.tabCounter) tabCounter = d.tabCounter;
+          return;
+        }
       }
-    }catch(e){ console.warn('JSONBin load failed', e); }
+    }catch(e){ console.warn('Gist load failed', e); }
   }
   // Fallback: localStorage
   try{
@@ -1428,49 +1423,43 @@ async function loadData(){
       if(d.jobs)       jobs       = d.jobs;
       if(d.tabCounter) tabCounter = d.tabCounter;
     }
-  }catch(e){ console.warn('Local load failed', e); }
+  }catch(e){}
 }
 
 // ═══════════════════════════════════
 //  SETTINGS MODAL
 // ═══════════════════════════════════
 function openSettingsModal(){
-  document.getElementById('settingsKeyInput').value = _currentKey();
-  document.getElementById('settingsBinInput').value = _binId;
-  document.getElementById('currentBinId').textContent = _binId || '(not set)';
+  document.getElementById('settingsKeyInput').value = _gistToken();
+  document.getElementById('settingsBinInput').value = _gistId();
+  document.getElementById('currentBinId').textContent = _gistId() || '(not set)';
   document.getElementById('settingsStatus').textContent = '';
   document.getElementById('settingsModal').classList.add('open');
 }
 function closeSettingsModal(){ document.getElementById('settingsModal').classList.remove('open'); }
 
-function _currentKey(){
-  // read from the const or localStorage override
-  return localStorage.getItem('tt_api_key') || JSONBIN_KEY || '';
-}
-function _effectiveKey(){ return localStorage.getItem('tt_api_key') || JSONBIN_KEY || ''; }
-
 function saveSettings(){
-  const key = document.getElementById('settingsKeyInput').value.trim();
-  const bin = document.getElementById('settingsBinInput').value.trim();
-  if(key) localStorage.setItem('tt_api_key', key);
-  if(bin){ _binId = bin; localStorage.setItem('tt_bin_id', bin); }
-  document.getElementById('currentBinId').textContent = _binId || '(not set)';
-  document.getElementById('settingsStatus').textContent = 'Saved! Triggering sync…';
-  document.getElementById('settingsStatus').style.color = 'var(--green)';
+  const tok = document.getElementById('settingsKeyInput').value.trim();
+  const gid = document.getElementById('settingsBinInput').value.trim();
+  if(tok) localStorage.setItem('tt_gist_token', tok);
+  if(gid) localStorage.setItem('tt_gist_id', gid);
+  document.getElementById('currentBinId').textContent = _gistId() || '(not set)';
+  const st = document.getElementById('settingsStatus');
+  st.textContent = 'Saved! Syncing…'; st.style.color = 'var(--green)';
   saveDataNow();
 }
 
 async function testConnection(){
   const st = document.getElementById('settingsStatus');
   st.textContent = 'Testing…'; st.style.color = 'var(--amber)';
-  const key = _effectiveKey();
-  if(!key){ st.textContent = 'No API key set.'; st.style.color='var(--red)'; return; }
+  const gid = _gistId(), tok = _gistToken();
+  if(!gid){ st.textContent = 'No Gist ID set.'; st.style.color='var(--red)'; return; }
   try{
-    const res = await fetch('https://api.jsonbin.io/v3/b?limit=1', {
-      headers:{ 'X-Master-Key': key }
-    });
-    if(res.ok){ st.textContent = '✅ Key valid!'; st.style.color='var(--green)'; }
-    else { st.textContent = '❌ Invalid key ('+res.status+')'; st.style.color='var(--red)'; }
+    const headers = { 'Accept': 'application/vnd.github.v3+json' };
+    if(tok) headers['Authorization'] = 'token ' + tok;
+    const res = await fetch('https://api.github.com/gists/' + gid, { headers });
+    if(res.ok){ st.textContent = '✅ Connected!'; st.style.color='var(--green)'; }
+    else { st.textContent = '❌ Failed ('+res.status+')'; st.style.color='var(--red)'; }
   }catch(e){ st.textContent = '❌ Network error'; st.style.color='var(--red)'; }
 }
 
