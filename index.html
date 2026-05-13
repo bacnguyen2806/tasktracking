@@ -224,6 +224,8 @@ select.ci{cursor:pointer;color-scheme:dark}
 <!-- HEADER -->
 <div class="header">
   <div class="logo">task<span>tracker</span></div>
+  <span id="saveStatus" style="font-size:11px;font-family:var(--mono);transition:color .3s;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+  <button class="manage-btn" onclick="openSettingsModal()">⚙️ Settings</button>
   <button class="manage-btn" onclick="openDayoffModal()">📅 Day-Off</button>
   <button class="manage-btn" onclick="openMembersModal()">👥 Members</button>
 </div>
@@ -247,6 +249,42 @@ select.ci{cursor:pointer;color-scheme:dark}
     <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Set day-off hours per member per date. These are subtracted from Free time.</p>
     <div id="dayoffContent"></div>
     <button class="btn btn-sm" onclick="addDayoffRow()">＋ Add entry</button>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)closeSettingsModal()">
+  <div class="modal" style="width:480px;max-width:96vw">
+    <div class="modal-title">⚙️ Settings — Cloud Storage <button class="modal-close" onclick="closeSettingsModal()">✕</button></div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.7">
+      Dữ liệu được lưu trên <strong style="color:var(--text)">JSONBin.io</strong> (miễn phí) — mọi người cùng link đều thấy chung dữ liệu.<br>
+      <strong style="color:var(--amber)">Bước 1:</strong> Tạo tài khoản tại <a href="https://jsonbin.io" target="_blank" style="color:var(--accent)">jsonbin.io</a> → Account → API Keys → copy Master Key.<br>
+      <strong style="color:var(--amber)">Bước 2:</strong> Dán key vào ô bên dưới và bấm Save.<br>
+      <strong style="color:var(--amber)">Bước 3:</strong> Lần đầu save data sẽ tạo Bin, Bin ID hiện ở header — copy vào ô Bin ID bên dưới và bấm Save lại.<br>
+      <strong style="color:var(--green)">Bước 4:</strong> Hardcode 2 giá trị này vào file .html trước khi share cho team.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      <div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">API Master Key</div>
+        <input id="settingsKeyInput" type="password"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 12px;outline:none"
+          placeholder="$2a$10$…" oninput="this.style.borderColor='var(--border2)'">
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Bin ID <span style="color:var(--text3);font-weight:400">(để trống nếu chưa có, sẽ tự tạo)</span></div>
+        <input id="settingsBinInput"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 12px;outline:none"
+          placeholder="64f3a1b2e3…" oninput="this.style.borderColor='var(--border2)'">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-sm" onclick="saveSettings()">💾 Save & Connect</button>
+      <button class="btn btn-ghost btn-sm" onclick="testConnection()">🔌 Test Connection</button>
+      <span id="settingsStatus" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
+    </div>
+    <div style="margin-top:14px;padding:10px 12px;background:var(--bg3);border-radius:var(--radius);font-size:11px;color:var(--text3)">
+      Current Bin ID: <span id="currentBinId" style="color:var(--text);font-family:var(--mono)">—</span>
+    </div>
   </div>
 </div>
 
@@ -1298,29 +1336,147 @@ function refreshStRating(sid,mid,cid){
 // ═══════════════════════════════════
 // ── Debounced save (avoids too many writes while typing) ──
 let _saveTimer=null;
+// ═══════════════════════════════════
+//  STORAGE — JSONBin.io (shared, persistent, cross-device)
+//  Hướng dẫn setup:
+//  1. Tạo tài khoản miễn phí tại https://jsonbin.io
+//  2. Vào Account → API Keys → tạo key, dán vào JSONBIN_KEY bên dưới
+//  3. Lần đầu chạy sẽ tự tạo Bin, ID được lưu vào localStorage để dùng lại
+// ═══════════════════════════════════
+const JSONBIN_KEY = '$2a$10$bSogm.QlPJyvATEpM3Moqu...TguyrvEkdcxi9KL8lPkJV9VHleoa'; // JSONBin Master Key
+const JSONBIN_BIN_ID = ''; // ← SAU LẦN ĐẦU CHẠY, DÁN BIN ID VÀO ĐÂY (xem hướng dẫn)
+const JSONBIN_URL = 'https://api.jsonbin.io/v3/b';
+
+let _binId = JSONBIN_BIN_ID || localStorage.getItem('tt_bin_id') || '';
+let _saveTimer = null;
+let _saveStatus = ''; // for UI feedback
+
+function setSaveStatus(msg, color){
+  let el = document.getElementById('saveStatus');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.color = color || 'var(--text3)';
+}
+
 function saveData(){
   clearTimeout(_saveTimer);
-  _saveTimer=setTimeout(()=>_doSave(),600);
+  _saveTimer = setTimeout(()=>_doSave(), 800);
 }
-function saveDataNow(){clearTimeout(_saveTimer);_doSave();}
+function saveDataNow(){ clearTimeout(_saveTimer); _doSave(); }
+
 async function _doSave(){
+  if(!JSONBIN_KEY){
+    // fallback: localStorage only
+    try{ localStorage.setItem('tt_data_local', JSON.stringify({members,dayoffs,jobs,tabCounter})); }catch(e){}
+    return;
+  }
+  setSaveStatus('Saving…', 'var(--amber)');
+  const payload = { members, dayoffs, jobs, tabCounter };
   try{
-    const payload=JSON.stringify({members,dayoffs,jobs,tabCounter});
-    await window.storage.set('tt_data',payload,true);
-  }catch(e){console.warn('Save failed',e)}
+    if(_binId){
+      // UPDATE existing bin
+      await fetch(`${JSONBIN_URL}/${_binId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type':'application/json', 'X-Master-Key': _effectiveKey() },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      // CREATE new bin
+      const res = await fetch(JSONBIN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'X-Master-Key': _effectiveKey(), 'X-Bin-Name': 'task-tracker', 'X-Bin-Private': 'false' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      _binId = data.metadata?.id || '';
+      if(_binId){
+        localStorage.setItem('tt_bin_id', _binId);
+        console.log('%c✅ Bin created! Copy this Bin ID and paste into JSONBIN_BIN_ID in your file:', 'color:lime;font-weight:bold');
+        console.log('%c' + _binId, 'color:cyan;font-size:16px;font-weight:bold');
+        setSaveStatus('Bin ID: ' + _binId + ' (copy to file!)', 'var(--green)');
+        setTimeout(()=>setSaveStatus('', ''), 15000);
+      }
+    }
+    setSaveStatus('Saved ✓', 'var(--green)');
+    setTimeout(()=>setSaveStatus('', ''), 2000);
+  }catch(e){
+    setSaveStatus('Save failed ✗', 'var(--red)');
+    console.warn('Save failed', e);
+  }
 }
 
 async function loadData(){
+  // Try JSONBin first if key + binId exist
+  if(JSONBIN_KEY && _binId){
+    try{
+      const res = await fetch(`${JSONBIN_URL}/${_binId}/latest`, {
+        headers: { 'X-Master-Key': _effectiveKey() }
+      });
+      if(res.ok){
+        const data = await res.json();
+        const d = data.record;
+        if(d.members)    members    = d.members;
+        if(d.dayoffs)    dayoffs    = d.dayoffs;
+        if(d.jobs)       jobs       = d.jobs;
+        if(d.tabCounter) tabCounter = d.tabCounter;
+        return;
+      }
+    }catch(e){ console.warn('JSONBin load failed', e); }
+  }
+  // Fallback: localStorage
   try{
-    const res=await window.storage.get('tt_data',true);
-    if(res&&res.value){
-      const d=JSON.parse(res.value);
-      if(d.members)    members=d.members;
-      if(d.dayoffs)    dayoffs=d.dayoffs;
-      if(d.jobs)       jobs=d.jobs;
-      if(d.tabCounter) tabCounter=d.tabCounter;
+    const raw = localStorage.getItem('tt_data_local');
+    if(raw){
+      const d = JSON.parse(raw);
+      if(d.members)    members    = d.members;
+      if(d.dayoffs)    dayoffs    = d.dayoffs;
+      if(d.jobs)       jobs       = d.jobs;
+      if(d.tabCounter) tabCounter = d.tabCounter;
     }
-  }catch(e){console.warn('Load failed or no data yet',e)}
+  }catch(e){ console.warn('Local load failed', e); }
+}
+
+// ═══════════════════════════════════
+//  SETTINGS MODAL
+// ═══════════════════════════════════
+function openSettingsModal(){
+  document.getElementById('settingsKeyInput').value = _currentKey();
+  document.getElementById('settingsBinInput').value = _binId;
+  document.getElementById('currentBinId').textContent = _binId || '(not set)';
+  document.getElementById('settingsStatus').textContent = '';
+  document.getElementById('settingsModal').classList.add('open');
+}
+function closeSettingsModal(){ document.getElementById('settingsModal').classList.remove('open'); }
+
+function _currentKey(){
+  // read from the const or localStorage override
+  return localStorage.getItem('tt_api_key') || JSONBIN_KEY || '';
+}
+function _effectiveKey(){ return localStorage.getItem('tt_api_key') || JSONBIN_KEY || ''; }
+
+function saveSettings(){
+  const key = document.getElementById('settingsKeyInput').value.trim();
+  const bin = document.getElementById('settingsBinInput').value.trim();
+  if(key) localStorage.setItem('tt_api_key', key);
+  if(bin){ _binId = bin; localStorage.setItem('tt_bin_id', bin); }
+  document.getElementById('currentBinId').textContent = _binId || '(not set)';
+  document.getElementById('settingsStatus').textContent = 'Saved! Triggering sync…';
+  document.getElementById('settingsStatus').style.color = 'var(--green)';
+  saveDataNow();
+}
+
+async function testConnection(){
+  const st = document.getElementById('settingsStatus');
+  st.textContent = 'Testing…'; st.style.color = 'var(--amber)';
+  const key = _effectiveKey();
+  if(!key){ st.textContent = 'No API key set.'; st.style.color='var(--red)'; return; }
+  try{
+    const res = await fetch('https://api.jsonbin.io/v3/b?limit=1', {
+      headers:{ 'X-Master-Key': key }
+    });
+    if(res.ok){ st.textContent = '✅ Key valid!'; st.style.color='var(--green)'; }
+    else { st.textContent = '❌ Invalid key ('+res.status+')'; st.style.color='var(--red)'; }
+  }catch(e){ st.textContent = '❌ Network error'; st.style.color='var(--red)'; }
 }
 
 // ═══════════════════════════════════
