@@ -265,12 +265,6 @@ select.ci{cursor:pointer;color-scheme:dark}
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
       <div>
-        <div style="font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Your Name <span style="color:var(--text3);font-weight:400">(hiện khi bạn lock)</span></div>
-        <input id="settingsNameInput"
-          style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font);font-size:13px;padding:8px 12px;outline:none"
-          placeholder="Tên của bạn..." oninput="this.style.borderColor='var(--border2)'">
-      </div>
-      <div>
         <div style="font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">GitHub Token</div>
         <input id="settingsKeyInput" type="password"
           style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 12px;outline:none"
@@ -1369,9 +1363,32 @@ function saveData(){ saveLocal(); }
 function saveDataNow(){ saveLocal(); }
 
 function saveLocal(){
+  if(_isReadOnly) return;
   _isDirty = true;
   updateSaveBtn();
   try{ localStorage.setItem('tt_data_local', JSON.stringify({members,dayoffs,jobs,tabCounter})); }catch(e){}
+  acquireLock();
+}
+function acquireLock(){
+  clearTimeout(_lockTimer);
+  _lockTimer = setTimeout(releaseLock, LOCK_TTL);
+  _writeLock(true);
+}
+function releaseLock(){
+  clearTimeout(_lockTimer);
+  _writeLock(false);
+}
+async function _writeLock(isLocked){
+  const gid=_gistId(),tok=_gistToken();
+  if(!gid||!tok) return;
+  const p=isLocked?{locked:true,at:Date.now()}:{locked:false,at:Date.now()};
+  try{
+    await fetch('https://api.github.com/gists/'+gid,{
+      method:'PATCH',
+      headers:{'Authorization':'token '+tok,'Content-Type':'application/json','Accept':'application/vnd.github.v3+json'},
+      body:JSON.stringify({files:{'lock.json':{content:JSON.stringify(p)}}})
+    });
+  }catch(e){}
 }
 
 function updateSaveBtn(){
@@ -1493,7 +1510,7 @@ async function pollGist(){
     if(lockRaw){
       try{
         const lock=JSON.parse(lockRaw);
-        setReadOnly(lock.locked && lock.by!==_myName && (Date.now()-(lock.at||0))<LOCK_TTL, lock.by||'');
+        setReadOnly(lock.locked===true && (Date.now()-(lock.at||0))<LOCK_TTL);
       }catch(e){}
     }
     const raw = data.files?.['tasktracker.json']?.content;
@@ -1531,12 +1548,17 @@ async function pollGist(){
 }
 setInterval(pollGist, 15000);
 
-function setReadOnly(isRO,lockedBy){
+function setReadOnly(isRO){
   _isReadOnly=isRO;
   let b=document.getElementById("lockBanner");
   if(isRO){
-    if(!b){b=document.createElement("div");b.id="lockBanner";b.style.cssText="position:fixed;top:52px;left:0;right:0;z-index:500;background:#2a1f05;border-bottom:2px solid var(--amber);color:var(--amber);font-size:13px;font-weight:500;padding:9px 24px;display:flex;align-items:center;gap:10px";b.innerHTML='<span>🔒</span><span id="lockMsg"></span><span style="margin-left:auto;font-size:11px;color:var(--text3)">Lock tự hết sau 5 phút</span>';document.body.appendChild(b);}
-    document.getElementById("lockMsg").textContent=lockedBy+" đang chỉnh sửa — bạn chỉ có thể xem";
+    if(!b){
+      b=document.createElement("div");
+      b.id="lockBanner";
+      b.style.cssText="position:fixed;top:52px;left:0;right:0;z-index:500;background:#2a1f05;border-bottom:2px solid var(--amber);color:var(--amber);font-size:13px;font-weight:500;padding:9px 24px;display:flex;align-items:center;gap:10px";
+      b.innerHTML='🔒 Ai đó đang chỉnh sửa — bạn chỉ có thể xem. <span style="margin-left:auto;font-size:11px;color:var(--text3)">Lock tự hết sau 5 phút không hoạt động</span>';
+      document.body.appendChild(b);
+    }
     const tb=document.querySelector(".tabs-bar");if(tb)tb.style.top="84px";
   }else{
     b?.remove();
@@ -1551,7 +1573,6 @@ window.addEventListener("beforeunload",()=>releaseLock());
 function openSettingsModal(){
   document.getElementById('settingsKeyInput').value = _gistToken();
   document.getElementById('settingsBinInput').value = _gistId();
-  document.getElementById('settingsNameInput').value = _myName;
   document.getElementById('currentBinId').textContent = _gistId() || '(not set)';
   document.getElementById('settingsStatus').textContent = '';
   document.getElementById('settingsModal').classList.add('open');
@@ -1561,10 +1582,8 @@ function closeSettingsModal(){ document.getElementById('settingsModal').classLis
 function saveSettings(){
   const tok=document.getElementById('settingsKeyInput').value.trim();
   const gid=document.getElementById('settingsBinInput').value.trim();
-  const name=document.getElementById('settingsNameInput').value.trim();
   if(tok) localStorage.setItem('tt_gist_token', tok);
   if(gid) localStorage.setItem('tt_gist_id', gid);
-  if(name){_myName=name;localStorage.setItem('tt_my_name',name);}
   document.getElementById('currentBinId').textContent = _gistId() || '(not set)';
   const st = document.getElementById('settingsStatus');
   st.textContent = 'Saved! Syncing…'; st.style.color = 'var(--green)';
@@ -1605,7 +1624,6 @@ async function testConnection(){
   buildArchiveList();
   rebuildMemberFilter();
   renderOverview();
-  if(!_myName) setTimeout(()=>{openSettingsModal();setSaveStatus('Vui lòng điền tên trong Settings','var(--amber)');setTimeout(()=>setSaveStatus('',''),6000);},600);
 })();
 </script>
 </body>
