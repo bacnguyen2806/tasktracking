@@ -1361,6 +1361,9 @@ function _gistId()    { return GIST_ID_DEFAULT    || localStorage.getItem('tt_gi
 function _gistToken() { return GIST_TOKEN_DEFAULT || localStorage.getItem('tt_gist_token') || ''; }
 
 let _isDirty = false; // true = có thay đổi chưa lưu lên cloud
+let _isReadOnly = false;
+let _lockTimer = null;
+const LOCK_TTL = 5 * 60 * 1000;
 
 function saveData(){ saveLocal(); }
 function saveDataNow(){ saveLocal(); }
