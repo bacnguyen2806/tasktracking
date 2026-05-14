@@ -341,7 +341,7 @@ select.ci{cursor:pointer;color-scheme:dark}
           <th style="background:var(--bg4);font-size:10px">Single</th>
           <th style="background:var(--bg4);font-size:10px">Multi</th>
           <th style="background:var(--bg4);font-size:10px">Video</th>
-          <th style="background:var(--bg4);font-size:10px">Set Banners</th>
+          <th style="background:var(--bg4);font-size:10px">Others</th>
           <th style="background:var(--bg4)">Earlier</th>
           <th style="background:var(--bg4)">On-time</th>
           <th style="background:var(--bg4)">Late</th>
@@ -394,7 +394,7 @@ let tabCounter = 0;
 let dragSrcTab = null;
 let archiveCurrentJobId = null; // job being previewed from archive tab
 
-const FORMAT_OPTS = ['','Key Visual','Single','Multi','Video','Set Banners'];
+const FORMAT_OPTS = ['','Key Visual','Single','Multi','Video','Others'];
 
 // ═══════════════════════════════════
 //  UTILS
@@ -560,10 +560,30 @@ function applyCustomRange(){
 
 function calcFreeHours(memberId,from,to,booked){
   const doHrs=dayoffInRange(memberId,from,to);
-  let capacity=0;
-  if(currentPeriod==='week') capacity=40;
-  else capacity=countWeekdays(from,to)*8;
+  const capacity=countWeekdays(from,to)*8;
   return Math.max(0,capacity-booked-doHrs);
+}
+
+function calcBookedInRange(subtasks, from, to){
+  let total = 0;
+  subtasks.forEach(s=>{
+    const hours = parseFloat(s.hours) || 0;
+    if(!hours) return;
+    const sd = parseLD(s.startedDate||s.receiveDate);
+    const di = parseLD(s.deadlineInternal);
+    if(!sd && !di){ total += hours; return; } // no dates: count fully
+    const taskStart = sd || di;
+    const taskEnd   = di || sd;
+    const totalDays = countWeekdays(taskStart, taskEnd) || 1;
+    const dailyRate = hours / totalDays;
+    // overlap of [taskStart,taskEnd] with [from,to]
+    const overlapStart = new Date(Math.max(taskStart, from));
+    const overlapEnd   = new Date(Math.min(taskEnd,   to));
+    if(overlapStart > overlapEnd) return; // no overlap
+    const overlapDays = countWeekdays(overlapStart, overlapEnd);
+    total += dailyRate * overlapDays;
+  });
+  return Math.round(total * 10) / 10; // round to 1 decimal
 }
 
 function renderOverview(){
@@ -640,7 +660,8 @@ function renderOverview(){
   tbody.innerHTML=Object.values(byMem).map(({member,tasks})=>{
     // sub-tasks for this member (tasks count, hours, rating)
     const mySTs = stFiltered.filter(s=>s.assignee===member.id);
-    const hrs   = mySTs.reduce((s,x)=>s+(parseFloat(x.hours)||0),0);
+    // Booked = proportional hours of each subtask that falls in period
+    const hrs = (from&&to) ? calcBookedInRange(mySTs,from,to) : mySTs.reduce((s,x)=>s+(parseFloat(x.hours)||0),0);
     const doHrs = from&&to?dayoffInRange(member.id,from,to):0;
     const free  = from&&to?calcFreeHours(member.id,from,to,hrs):0;
     // OT = Booked - (weekdays Mon-Fri in period × 8) - DayOff
@@ -653,7 +674,7 @@ function renderOverview(){
     // Use stInRange to find which sub-jobs are active this period, then check sub-job assignee + progress
     const fc={};
     const doneSubjobs=allC.filter(c=>c.assignee===member.id && c.progress==='done');
-    ['Key Visual','Single','Multi','Video','Set Banners'].forEach(f=>{fc[f]=doneSubjobs.filter(c=>c.format===f).length});
+    ['Key Visual','Single','Multi','Video','Others'].forEach(f=>{fc[f]=doneSubjobs.filter(c=>c.format===f).length});
     // tasks column = total count of sub-tasks
     const taskCount=mySTs.length;
     const initials=getInitials(member.name);
@@ -665,7 +686,7 @@ function renderOverview(){
       <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${free} hrs</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--amber)">${doHrs} hrs</td>
       <td style="font-family:var(--mono);font-size:12px;color:${ot>0?'var(--red)':'var(--text3)'}">${ot>0?ot+' hrs':'—'}</td>
-      ${['Key Visual','Single','Multi','Video','Set Banners'].map(f=>`<td style="text-align:center;font-family:var(--mono);font-size:12px;color:${fc[f]?'var(--text)':'var(--text3)'}">${fc[f]||'—'}</td>`).join('')}
+      ${['Key Visual','Single','Multi','Video','Others'].map(f=>`<td style="text-align:center;font-family:var(--mono);font-size:12px;color:${fc[f]?'var(--text)':'var(--text3)'}">${fc[f]||'—'}</td>`).join('')}
       <td><span class="badge bg-green">${earlier}</span></td>
       <td><span class="badge bg-amber">${ontime}</span></td>
       <td><span class="badge bg-red">${late}</span></td>
@@ -1054,6 +1075,13 @@ function motherHTML(jobId,mother){
   </div>`;
 }
 
+function buildFormatOptions(selected){
+  return FORMAT_OPTS.map(f=>{
+    const sel = f===selected ? ' selected' : '';
+    const label = f || '— Format —';
+    return '<option value="'+f+'"'+sel+'>'+label+'</option>';
+  }).join('');
+}
 function childRowHTML(jobId,motherId,child,idx){
   const stHTML=(child.subtasks||[]).slice().reverse().map(s=>subtaskHTML(motherId,child.id,s)).join('');
   return`<tr id="row-${child.id}">
@@ -1066,8 +1094,8 @@ function childRowHTML(jobId,motherId,child,idx){
       </div>
     </td>
     <td>
-      <select class="ci" style="min-width:110px" onchange="updateChild('${motherId}','${child.id}','format',this.value)">
-        ${FORMAT_OPTS.map(f=>`<option value="${f}" ${child.format===f?'selected':''}>${f||'— Format —'}</option>`).join('')}
+      <select class="ci" style="min-width:110px" id="fmt-${child.id}" onchange="updateChild('${motherId}','${child.id}','format',this.value)">
+        ${buildFormatOptions(child.format)}
       </select>
     </td>
     <td>
