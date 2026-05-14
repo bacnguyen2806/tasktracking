@@ -406,6 +406,17 @@ function linkify(t){
   return esc.replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
 }
 function pClass(p){return p==='inprogress'?'p-inprogress':p==='done'?'p-done':p==='closed'?'p-closed':''}
+function calcChildTotalHrs(child){
+  return (child.subtasks||[]).reduce((s,t)=>s+(parseFloat(t.hours)||0),0);
+}
+function refreshChildTotalHrs(cid){
+  for(const j of jobs)for(const m of j.mothers){
+    const c=m.children.find(c=>c.id===cid);if(!c)continue;
+    const el=document.getElementById('total-hrs-'+cid);
+    if(el)el.textContent=calcChildTotalHrs(c)+' hrs';
+    return;
+  }
+}
 function today0(){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate())}
 // weekday count in [from,to] inclusive
 function countWeekdays(from,to){
@@ -631,7 +642,9 @@ function renderOverview(){
     const hrs   = mySTs.reduce((s,x)=>s+(parseFloat(x.hours)||0),0);
     const doHrs = from&&to?dayoffInRange(member.id,from,to):0;
     const free  = from&&to?calcFreeHours(member.id,from,to,hrs):0;
-    const ot    = Math.max(0, hrs - free - doHrs);
+    // OT = Booked - (weekdays*8) - DayOff
+    const _cap = (from&&to) ? (currentPeriod==='week'?40:countWeekdays(from,to)*8) : 0;
+    const ot   = Math.max(0, hrs - _cap - doHrs);
     const earlier = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Earlier').length;
     const ontime  = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='On-time').length;
     const late    = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Late').length;
@@ -737,15 +750,27 @@ function renderTTCalendar(allST){
   const daysInMonth=new Date(y,mo+1,0).getDate();
   const td=today0();
 
-  // group sub-tasks by their Int.Deadline date string (YYYY-MM-DD) falling in this month
+  // group sub-tasks into each day from startedDate to deadlineInternal
   const byDate={};
   allST.forEach(s=>{
-    if(!s.deadlineInternal)return;
-    const d=parseLocalDate(s.deadlineInternal);
-    if(!d||d.getFullYear()!==y||d.getMonth()!==mo)return;
-    const key=s.deadlineInternal;
-    if(!byDate[key])byDate[key]=[];
-    byDate[key].push(s);
+    if(!s.deadlineInternal&&!(s.startedDate||s.receiveDate))return;
+    const start=parseLocalDate(s.startedDate||s.receiveDate);
+    const end=parseLocalDate(s.deadlineInternal);
+    if(!end&&!start)return;
+    const rangeStart=start||end;
+    const rangeEnd=end||start;
+    const monthStart=new Date(y,mo,1);
+    const monthEnd=new Date(y,mo+1,0);
+    // iterate each day in range that falls in this month
+    let cur=new Date(Math.max(rangeStart,monthStart));
+    const stop=new Date(Math.min(rangeEnd,monthEnd));
+    while(cur<=stop){
+      const key=`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+      if(!byDate[key])byDate[key]=[];
+      // avoid duplicate if same task already added (shouldn't happen but safe)
+      if(!byDate[key].find(x=>x.id===s.id))byDate[key].push(s);
+      cur.setDate(cur.getDate()+1);
+    }
   });
 
   const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -1008,7 +1033,7 @@ function motherHTML(jobId,mother){
       <div class="child-table-wrap">
         <table class="child-table">
           <thead><tr>
-            <th>#</th><th>Sub-job</th><th>Format</th><th>Assignee</th><th>Progress</th><th></th>
+            <th>#</th><th>Sub-job</th><th>Format</th><th>Assignee</th><th>Total hrs</th><th>Progress</th><th></th>
           </tr></thead>
           <tbody id="children-${mother.id}">
             ${[...mother.children].reverse().map((c,i)=>childRowHTML(jobId,mother.id,c,mother.children.length-i)).join('')}
@@ -1044,6 +1069,9 @@ function childRowHTML(jobId,motherId,child,idx){
           onfocus="showAD('${child.id}')" onblur="hideAD('${child.id}')" autocomplete="off">
         <div class="asgn-dd" id="ad-${child.id}"></div>
       </div>
+    </td>
+    <td>
+      <span class="hours-val" id="total-hrs-${child.id}">${calcChildTotalHrs(child)} hrs</span>
     </td>
     <td>
       <select class="prog-sel ${pClass(child.progress)}" id="cp-${child.id}" onchange="setChildProgress('${jobId}','${motherId}','${child.id}',this.value)">
@@ -1128,6 +1156,7 @@ function updateChild(mid,cid,field,val){
 }
 function updateSubtask(mid,cid,sid,field,val){
   jobs.forEach(j=>{const m=j.mothers.find(m=>m.id===mid);if(!m)return;const c=m.children.find(c=>c.id===cid);if(!c)return;const s=(c.subtasks||[]).find(s=>s.id===sid);if(s)s[field]=val});
+  if(field==='hours') refreshChildTotalHrs(cid);
   saveData();
 }
 
@@ -1169,7 +1198,13 @@ function checkAutoChild(jid,mid,cid){
     if(j.id!==jid)return;
     const m=j.mothers.find(m=>m.id===mid);if(!m)return;
     const c=m.children.find(c=>c.id===cid);if(!c||!c.subtasks||!c.subtasks.length)return;
-    if(c.subtasks.every(s=>s.progress==='done'||s.progress==='closed')){
+    // any subtask inprogress → child becomes inprogress
+    if(c.subtasks.some(s=>s.progress==='inprogress') && c.progress!=='done' && c.progress!=='closed'){
+      c.progress='inprogress';
+      const el=document.getElementById('cp-'+cid);if(el){el.value='inprogress';el.className='prog-sel p-inprogress'}
+    }
+    // all done/closed → child done
+    else if(c.subtasks.every(s=>s.progress==='done'||s.progress==='closed')){
       c.progress='done';
       const el=document.getElementById('cp-'+cid);if(el){el.value='done';el.className='prog-sel p-done'}
       checkAutoMother(jid,mid);
@@ -1194,7 +1229,7 @@ function addMother(jobId){
   const wrap=document.getElementById('mothers-'+jobId);if(!wrap)return;
   const div=document.createElement('div');
   div.innerHTML=motherHTML(jobId,mother);
-  wrap.appendChild(div.firstChild);
+  wrap.insertBefore(div.firstChild, wrap.firstChild);
 }
 function removeMother(jid,mid){
   if(!confirm('Delete this parent job?'))return;
@@ -1250,6 +1285,7 @@ function removeSubtask(mid,cid,sid){
     const c=m.children.find(c=>c.id===cid);if(!c)return;
     c.subtasks=(c.subtasks||[]).filter(s=>s.id!==sid);
     document.getElementById('st-'+sid)?.remove();
+    refreshChildTotalHrs(cid);
     saveData();
   });
 }
@@ -1339,8 +1375,8 @@ function refreshStRating(sid,mid,cid){
 //    insert into tasktracker (id) values ('main');
 //  Sau đó điền URL + anon key vào ⚙️ Settings
 // ═══════════════════════════════════
-const SB_URL_DEFAULT   = ''; // https://xxxx.supabase.co
-const SB_KEY_DEFAULT   = ''; // anon public key
+const SB_URL_DEFAULT   = 'https://eyqosmlnotxoxluflnvh.supabase.co';
+const SB_KEY_DEFAULT   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5cW9zbWxub3R4b3hsdWZsbnZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2OTgzNTAsImV4cCI6MjA5NDI3NDM1MH0.wmDtBKENUwIPgBypScqoD7X4H-JUSLivp8QrAnQ19X8';
 
 let _saveTimer  = null;
 let _isDirty    = false;
