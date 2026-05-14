@@ -221,7 +221,6 @@ select.ci{cursor:pointer;color-scheme:dark}
 </head>
 <body>
 
-<!-- HEADER -->
 <div class="header">
   <div class="logo">task<span>tracker</span></div>
   <span id="saveStatus" style="font-size:11px;font-family:var(--mono);transition:color .3s;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -231,7 +230,6 @@ select.ci{cursor:pointer;color-scheme:dark}
   <button class="manage-btn" onclick="openMembersModal()">👥 Members</button>
 </div>
 
-<!-- MEMBERS MODAL -->
 <div class="modal-overlay" id="membersModal" onclick="if(event.target===this)closeMembersModal()">
   <div class="modal">
     <div class="modal-title">👥 Team Members <button class="modal-close" onclick="closeMembersModal()">✕</button></div>
@@ -243,7 +241,6 @@ select.ci{cursor:pointer;color-scheme:dark}
   </div>
 </div>
 
-<!-- DAY-OFF MODAL -->
 <div class="modal-overlay" id="dayoffModal" onclick="if(event.target===this)closeDayoffModal()">
   <div class="modal" style="width:520px;max-width:96vw">
     <div class="modal-title">📅 Day-Off <button class="modal-close" onclick="closeDayoffModal()">✕</button></div>
@@ -253,7 +250,6 @@ select.ci{cursor:pointer;color-scheme:dark}
   </div>
 </div>
 
-<!-- SETTINGS MODAL -->
 <div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)closeSettingsModal()">
   <div class="modal" style="width:480px;max-width:96vw">
     <div class="modal-title">⚙️ Settings — Cloud Storage <button class="modal-close" onclick="closeSettingsModal()">✕</button></div>
@@ -289,7 +285,6 @@ select.ci{cursor:pointer;color-scheme:dark}
   </div>
 </div>
 
-<!-- TABS BAR -->
 <div class="tabs-bar" id="tabsBar">
   <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview',this)">📊 Overview</button>
   <button class="tab-btn" data-tab="tasktoday" onclick="switchTab('tasktoday',this)">📅 Calendar</button>
@@ -300,10 +295,8 @@ select.ci{cursor:pointer;color-scheme:dark}
   <button class="tab-add-btn" onclick="addJobTab()" title="Add new job">＋</button>
 </div>
 
-<!-- MAIN -->
 <div class="main">
 
-  <!-- OVERVIEW -->
   <div class="tab-panel active" id="tab-overview">
     <div class="overview-controls">
       <div class="filter-group">
@@ -350,7 +343,6 @@ select.ci{cursor:pointer;color-scheme:dark}
     </div>
   </div>
 
-  <!-- TASK TODAY -->
   <div class="tab-panel" id="tab-tasktoday">
     <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <div style="font-size:16px;font-weight:600;margin-right:4px">📅 Calendar</div>
@@ -359,14 +351,11 @@ select.ci{cursor:pointer;color-scheme:dark}
       </select>
       <div style="margin-left:auto;font-size:12px;color:var(--text2)" id="ttDateLabel"></div>
     </div>
-    <!-- Two columns: Today list + Month calendar -->
     <div style="display:grid;grid-template-columns:320px 1fr;gap:20px;align-items:start" id="ttGrid">
-      <!-- Today -->
       <div>
         <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);margin-bottom:10px">Today</div>
         <div id="ttTodayList"></div>
       </div>
-      <!-- Calendar -->
       <div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
           <button class="btn btn-ghost btn-sm" onclick="ttCalPrev()">‹</button>
@@ -378,9 +367,7 @@ select.ci{cursor:pointer;color-scheme:dark}
     </div>
   </div>
 
-</div><!-- /main -->
-
-<script>
+</div><script>
 // ═══════════════════════════════════
 //  STATE
 // ═══════════════════════════════════
@@ -557,26 +544,17 @@ function applyCustomRange(){
   renderOverview();
 }
 
-function calcFreeHours(memberId,from,to,booked){
-  const doHrs=dayoffInRange(memberId,from,to);
-  let capacity=0;
-  if(currentPeriod==='week') capacity=40;
-  else capacity=countWeekdays(from,to)*8;
-  return Math.max(0,capacity-booked-doHrs);
-}
-
 function renderOverview(){
   const{from,to}=getDateRange();
   const prev=document.getElementById('memberFilter').value;
 
-  // Collect sub-jobs (for format counts, task pills, booked from sub-job assignee)
+  // Collect sub-jobs
   let allC=[];
   jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
     if(c.name||c.assignee)allC.push({...c,jobName:j.tabTitle,jobId:j.id,_type:'child'});
   })));
 
-  // Collect sub-tasks separately (for tasks count, hours, rating — by subtask assignee)
-  // Also attach parent sub-job info: format, assignee, progress (for format counting)
+  // Collect sub-tasks separately
   let allST=[];
   jobs.forEach(j=>j.mothers.forEach(m=>m.children.forEach(c=>{
     (c.subtasks||[]).forEach(s=>{
@@ -594,7 +572,6 @@ function renderOverview(){
   const inRange   = allC.filter(c=>taskInRange(c,from,to));
   const stInRange = allST.filter(s=>taskInRange(s,from,to));
 
-  // Rebuild member select
   const sel=document.getElementById('memberFilter');
   sel.innerHTML='<option value="all">All members</option>'+
     members.map(m=>`<option value="${m.id}" ${m.id===prev?'selected':''}>${m.name}</option>`).join('');
@@ -603,7 +580,6 @@ function renderOverview(){
   const filtered   = mf!=='all' ? inRange.filter(c=>c.assignee===mf)   : inRange;
   const stFiltered = mf!=='all' ? stInRange.filter(s=>s.assignee===mf) : stInRange;
 
-  // Totals: tasks = sub-tasks count; hours = sum of sub-task hours; rating from sub-tasks
   let tt=stFiltered.length, tHrs=0, tE=0, tO=0, tL=0;
   stFiltered.forEach(s=>{
     tHrs+=parseFloat(s.hours)||0;
@@ -619,7 +595,6 @@ function renderOverview(){
     <div class="summary-card"><div class="lbl">Late</div><div class="val" style="color:var(--red)">${tL}</div></div>`;
 
   const tbody=document.getElementById('overviewBody');
-  // group by member — include any member with sub-jobs OR sub-tasks in range
   const byMem={};
   const showMembers=mf!=='all'?members.filter(m=>m.id===mf):members;
   showMembers.forEach(m=>{
@@ -627,7 +602,7 @@ function renderOverview(){
     const hasSTs   = stFiltered.some(s=>s.assignee===m.id);
     if(hasTasks||hasSTs) byMem[m.id]={member:m,tasks:filtered.filter(c=>c.assignee===m.id)};
   });
-  // unassigned sub-jobs
+  
   const unassigned=filtered.filter(c=>!c.assignee||!members.find(m=>m.id===c.assignee));
   if(unassigned.length) byMem['_unassigned']={member:{id:'_unassigned',name:'(Unassigned)'},tasks:unassigned};
 
@@ -637,23 +612,24 @@ function renderOverview(){
   }
 
   tbody.innerHTML=Object.values(byMem).map(({member,tasks})=>{
-    // sub-tasks for this member (tasks count, hours, rating)
     const mySTs = stFiltered.filter(s=>s.assignee===member.id);
     const hrs   = mySTs.reduce((s,x)=>s+(parseFloat(x.hours)||0),0);
     const doHrs = from&&to?dayoffInRange(member.id,from,to):0;
-    const free  = from&&to?calcFreeHours(member.id,from,to,hrs):0;
-    // OT = Booked - (weekdays*8) - DayOff
-    const _cap = (from&&to) ? (currentPeriod==='week'?40:countWeekdays(from,to)*8) : 0;
-    const ot   = Math.max(0, hrs - _cap - doHrs);
+    
+    // Sửa công thức chuẩn OT: Giờ mong đợi = (Số ngày thường * 8) - Nghỉ phép
+    const _cap  = (from&&to) ? countWeekdays(from,to)*8 : 0;
+    const expectedHrs = Math.max(0, _cap - doHrs); 
+    const free  = from&&to? Math.max(0, expectedHrs - hrs) : 0;
+    const ot    = Math.max(0, hrs - expectedHrs);
+
     const earlier = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Earlier').length;
     const ontime  = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='On-time').length;
     const late    = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Late').length;
-    // format counts — unique Done sub-jobs that have sub-tasks in range, attributed to sub-job assignee
-    // Use stInRange to find which sub-jobs are active this period, then check sub-job assignee + progress
+
     const fc={};
     const doneSubjobs=allC.filter(c=>c.assignee===member.id && c.progress==='done');
     ['Key Visual','Single','Multi','Video','Set Banners'].forEach(f=>{fc[f]=doneSubjobs.filter(c=>c.format===f).length});
-    // tasks column = total count of sub-tasks
+    
     const taskCount=mySTs.length;
     const initials=getInitials(member.name);
 
@@ -703,10 +679,8 @@ function renderTaskToday(){
   const td=today0();
   document.getElementById('ttDateLabel').textContent=td.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
-  // init calendar to current month if first load
   if(!ttCalYear){ttCalYear=td.getFullYear();ttCalMonth=td.getMonth();}
 
-  // rebuild member filter
   const sel=document.getElementById('ttMemberFilter');
   const prev=sel.value;
   sel.innerHTML='<option value="">— Select member —</option>'+
@@ -750,7 +724,6 @@ function renderTTCalendar(allST){
   const daysInMonth=new Date(y,mo+1,0).getDate();
   const td=today0();
 
-  // group sub-tasks into each day from startedDate to deadlineInternal
   const byDate={};
   allST.forEach(s=>{
     if(!s.deadlineInternal&&!(s.startedDate||s.receiveDate))return;
@@ -761,27 +734,26 @@ function renderTTCalendar(allST){
     const rangeEnd=end||start;
     const monthStart=new Date(y,mo,1);
     const monthEnd=new Date(y,mo+1,0);
-    // iterate each day in range that falls in this month
     let cur=new Date(Math.max(rangeStart,monthStart));
     const stop=new Date(Math.min(rangeEnd,monthEnd));
     while(cur<=stop){
-      const key=`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
-      if(!byDate[key])byDate[key]=[];
-      // avoid duplicate if same task already added (shouldn't happen but safe)
-      if(!byDate[key].find(x=>x.id===s.id))byDate[key].push(s);
+      const dow = cur.getDay();
+      // Bỏ qua Thứ 7 (6) và Chủ Nhật (0)
+      if (dow !== 0 && dow !== 6) {
+        const key=`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+        if(!byDate[key])byDate[key]=[];
+        if(!byDate[key].find(x=>x.id===s.id))byDate[key].push(s);
+      }
       cur.setDate(cur.getDate()+1);
     }
   });
 
   const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let html=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">`;
-  // day headers
   dayNames.forEach(d=>{
     html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;padding:4px 0">${d}</div>`;
   });
-  // empty cells before first day
   for(let i=0;i<firstDay;i++) html+=`<div style="min-height:80px"></div>`;
-  // day cells
   for(let day=1;day<=daysInMonth;day++){
     const dateStr=`${y}-${String(mo+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const isToday=new Date(y,mo,day).getTime()===td.getTime();
@@ -824,10 +796,8 @@ function toggleTTMember(hdr){
 }
 
 function jumpTo(jobId,motherId,childId,subtaskId){
-  // Switch to job tab
   const btn=document.querySelector(`[data-tab="${jobId}"]`);
   if(btn)switchTab(jobId,btn);
-  // Scroll to child row
   setTimeout(()=>{
     const el=document.getElementById('row-'+childId)||document.getElementById('mother-'+motherId);
     if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.outline='2px solid var(--accent)';setTimeout(()=>el.style.outline='',1500)}
@@ -880,14 +850,12 @@ function createDraggableTabBtn(id,label){
   btn.dataset.tab=id;
   btn.innerHTML=`📋 <span class="tab-label" style="outline:none">${label}</span> <span class="tab-close" onclick="removeJobTab('${id}',event)">✕</span>`;
   btn.onclick=e=>{if(!e.target.classList.contains('tab-close')&&!e.target.isContentEditable)switchTab(id,btn)};
-  // double-click on label → inline rename
   btn.addEventListener('dblclick',e=>{
     if(e.target.classList.contains('tab-close'))return;
     e.stopPropagation();
     const lbl=btn.querySelector('.tab-label');
     lbl.contentEditable='true';
     lbl.focus();
-    // select all text
     const range=document.createRange();range.selectNodeContents(lbl);
     const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
     const finish=()=>{
@@ -913,12 +881,10 @@ function removeJobTab(id,e){
   switchTab('overview',document.querySelector('[data-tab="overview"]'));
 }
 
-// ── Archive / "…" tab ──
 function buildArchiveList(){
   const closed=jobs.filter(j=>j.status==='closed');
   const btn=document.getElementById('archiveBtn');
   btn.classList.toggle('has-closed',closed.length>0);
-  // Remove tab buttons for closed jobs from bar (keep panel in DOM)
   jobs.forEach(j=>{
     const tabBtn=document.querySelector(`[data-tab="${j.id}"]`);
     if(!tabBtn)return;
@@ -932,7 +898,6 @@ function toggleArchiveDropdown(){
   if(dd.classList.contains('open')){closeArchiveDropdown();return;}
   renderArchiveDropdown();
   dd.classList.add('open');
-  // close on outside click — defer so this click doesn't immediately close it
   setTimeout(()=>document.addEventListener('click',archiveOutsideClick,{once:true}),0);
 }
 function closeArchiveDropdown(){document.getElementById('archiveDropdown').classList.remove('open')}
@@ -954,7 +919,6 @@ function renderArchiveDropdown(){
 
 function openClosedJob(jobId){
   closeArchiveDropdown();
-  // Show this job's panel but keep "…" as the active tab button
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('archiveBtn').style.color='var(--accent)';
@@ -996,12 +960,10 @@ function setJobStatus(jobId,val){
   if(sel)sel.className='status-select'+(val==='inprogress'?' st-inprogress':val==='closed'?' st-closed':'');
   buildArchiveList();
   saveDataNow();
-  // update tab label colour
   const tabBtn=document.querySelector(`[data-tab="${jobId}"] .tab-label`);
   if(tabBtn){tabBtn.style.color=val==='closed'?'var(--red)':val==='inprogress'?'var(--accent)':''}
 }
 
-// Description
 function editDesc(jobId){
   document.getElementById('dr-'+jobId).style.display='none';
   const ta=document.getElementById('da-'+jobId);ta.style.display='block';ta.focus();
@@ -1013,7 +975,6 @@ function saveDesc(jobId){
   const dr=document.getElementById('dr-'+jobId);dr.style.display='';dr.innerHTML=linkify(j.description)||'';
 }
 
-// Mother
 function motherHTML(jobId,mother){
   return`<div class="job-mother" id="mother-${mother.id}">
     <div class="job-mother-header">
@@ -1198,12 +1159,10 @@ function checkAutoChild(jid,mid,cid){
     if(j.id!==jid)return;
     const m=j.mothers.find(m=>m.id===mid);if(!m)return;
     const c=m.children.find(c=>c.id===cid);if(!c||!c.subtasks||!c.subtasks.length)return;
-    // any subtask inprogress → child becomes inprogress
     if(c.subtasks.some(s=>s.progress==='inprogress') && c.progress!=='done' && c.progress!=='closed'){
       c.progress='inprogress';
       const el=document.getElementById('cp-'+cid);if(el){el.value='inprogress';el.className='prog-sel p-inprogress'}
     }
-    // all done/closed → child done
     else if(c.subtasks.every(s=>s.progress==='done'||s.progress==='closed')){
       c.progress='done';
       const el=document.getElementById('cp-'+cid);if(el){el.value='done';el.className='prog-sel p-done'}
@@ -1245,7 +1204,6 @@ function addChild(jid,mid){
     const child={id:uid(),name:'',assignee:'',format:'',startedDate:'',deadlineInternal:'',deadlineAccount:'',hours:'',progress:'',subtasks:[]};
     m.children.push(child);
     const tbody=document.getElementById('children-'+mid);if(!tbody)return;
-    // newest on top
     const dummy=document.createElement('table');
     dummy.innerHTML='<tbody>'+childRowHTML(j.id,mid,child,m.children.length)+'</tbody>';
     tbody.insertBefore(dummy.querySelector('tr'),tbody.firstChild);
@@ -1254,15 +1212,22 @@ function addChild(jid,mid){
     saveData();
   });
 }
+
+// Xóa Sub-job an toàn
 function removeChild(mid,cid){
-  jobs.forEach(j=>{
-    const m=j.mothers.find(m=>m.id===mid);if(!m)return;
-    m.children=m.children.filter(c=>c.id!==cid);
-    document.getElementById('row-'+cid)?.remove();
-    const countEl=document.querySelector(`#mother-${mid} .job-count`);
-    if(countEl)countEl.textContent=m.children.length+' tasks';
-    saveData();
-  });
+  if(!confirm('Xác nhận xóa Sub-job này cùng toàn bộ Sub-task bên trong?')) return;
+  for(const j of jobs) {
+    const m = j.mothers.find(x => x.id === mid);
+    if(m) {
+      m.children = m.children.filter(c => c.id !== cid);
+      const row = document.getElementById('row-'+cid);
+      if(row) row.remove();
+      const countEl = document.querySelector(`#mother-${mid} .job-count`);
+      if(countEl) countEl.textContent = m.children.length + ' tasks';
+      saveData();
+      return; 
+    }
+  }
 }
 
 function addSubtask(jid,mid,cid){
@@ -1275,7 +1240,7 @@ function addSubtask(jid,mid,cid){
     const list=document.getElementById('stlist-'+cid);if(!list)return;
     const div=document.createElement('div');
     div.innerHTML=subtaskHTML(mid,cid,s);
-    list.insertBefore(div.firstChild,list.firstChild); // newest on top
+    list.insertBefore(div.firstChild,list.firstChild);
     saveData();
   });
 }
@@ -1308,9 +1273,8 @@ function refreshRating(cid){
 
 // ASSIGNEE
 function onAssigneeInput(mid,cid,val){
-  // try to resolve by name
   const id=memberIdByName(val);
-  updateChild(mid,cid,'assignee',id||val); // store id if found, else raw text
+  updateChild(mid,cid,'assignee',id||val);
   showAD(cid,val);
 }
 function showAD(cid,q){
@@ -1331,7 +1295,7 @@ function pickAssignee(mid,cid,memId,memName){
   const inp=document.getElementById('ai-'+cid);if(inp)inp.value=memName;
   document.getElementById('ad-'+cid)?.classList.remove('open');
 }
-// subtask assignee dropdown
+
 function onStAssigneeInput(mid,cid,sid,val){
   const id=memberIdByName(val);
   updateSubtask(mid,cid,sid,'assignee',id||val);
@@ -1343,7 +1307,6 @@ function showStAD(sid,q){
   const query=(q!==undefined?q:inp.value).toLowerCase();
   const fl=members.filter(m=>m.name.toLowerCase().includes(query));
   if(!fl.length){dd.classList.remove('open');return}
-  // find mid+cid for this subtask
   let foundMid='',foundCid='';
   for(const j of jobs)for(const m of j.mothers)for(const c of m.children){
     if((c.subtasks||[]).find(s=>s.id===sid)){foundMid=m.id;foundCid=c.id;break}
@@ -1370,10 +1333,6 @@ function refreshStRating(sid,mid,cid){
 
 // ═══════════════════════════════════
 //  STORAGE — Supabase
-//  Setup: tạo account tại supabase.com → new project → SQL Editor:
-//    create table tasktracker (id text primary key default 'main', data jsonb, locked boolean default false, locked_at timestamptz, updated_at timestamptz default now());
-//    insert into tasktracker (id) values ('main');
-//  Sau đó điền URL + anon key vào ⚙️ Settings
 // ═══════════════════════════════════
 const SB_URL_DEFAULT   = 'https://eyqosmlnotxoxluflnvh.supabase.co';
 const SB_KEY_DEFAULT   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5cW9zbWxub3R4b3hsdWZsbnZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2OTgzNTAsImV4cCI6MjA5NDI3NDM1MH0.wmDtBKENUwIPgBypScqoD7X4H-JUSLivp8QrAnQ19X8';
@@ -1383,6 +1342,7 @@ let _isDirty    = false;
 let _isReadOnly = false;
 let _lockTimer  = null;
 let _pollTimer  = null;
+let _lastUpdatedAt = '';
 const LOCK_TTL  = 5 * 60 * 1000;
 
 function setSaveStatus(msg, color){
@@ -1391,11 +1351,12 @@ function setSaveStatus(msg, color){
   el.textContent = msg;
   el.style.color = color || 'var(--text3)';
 }
-function _sbUrl()  { return SB_URL_DEFAULT  || localStorage.getItem('tt_sb_url')  || ''; }
-function _sbKey()  { return SB_KEY_DEFAULT  || localStorage.getItem('tt_sb_key')  || ''; }
+
+// Ưu tiên đọc từ LocalStorage, nếu không có mới dùng Default từ Promp
+function _sbUrl()  { return localStorage.getItem('tt_sb_url') || SB_URL_DEFAULT; }
+function _sbKey()  { return localStorage.getItem('tt_sb_key') || SB_KEY_DEFAULT; }
 function _sbHeaders(){ return { 'Content-Type':'application/json', 'apikey':_sbKey(), 'Authorization':'Bearer '+_sbKey() }; }
 
-// ── Local save (instant, every change) ──
 function saveData(){ saveLocal(); }
 function saveDataNow(){ saveLocal(); }
 function saveLocal(){
@@ -1420,7 +1381,6 @@ function updateSaveBtn(){
   }
 }
 
-// ── Lock ──
 function acquireLock(){
   clearTimeout(_lockTimer);
   _lockTimer = setTimeout(releaseLock, LOCK_TTL);
@@ -1442,18 +1402,21 @@ async function _writeLock(isLocked){
   }catch(e){}
 }
 
-// ── Cloud save ──
 async function _doSave(){
   const url = _sbUrl(), key = _sbKey();
   if(!url||!key){ setSaveStatus('⚙️ Chưa cấu hình Supabase','var(--red)'); return; }
   setSaveStatus('Saving…','var(--amber)');
+  const nowStr = new Date().toISOString();
   try{
+    // Thêm header Prefer: return=representation để Supabase trả về dòng dữ liệu vừa update xong
     const res = await fetch(url+'/rest/v1/tasktracker?id=eq.main', {
       method: 'PATCH',
-      headers: _sbHeaders(),
-      body: JSON.stringify({ data:{members,dayoffs,jobs,tabCounter}, locked:false, locked_at:null, updated_at:new Date().toISOString() })
+      headers: { ..._sbHeaders(), 'Prefer': 'return=representation' }, 
+      body: JSON.stringify({ data:{members,dayoffs,jobs,tabCounter}, locked:false, locked_at:null, updated_at:nowStr })
     });
     if(res.ok){
+      const rows = await res.json();
+      if(rows && rows[0]) _lastUpdatedAt = rows[0].updated_at; // Ghi nhớ cọc mốc update của chính mình
       setSaveStatus('Saved ✓','var(--green)');
       setTimeout(()=>setSaveStatus('',''),2000);
     } else {
@@ -1466,39 +1429,39 @@ async function _doSave(){
   }
 }
 
-// ── Load ──
 async function loadData(){
   const url = _sbUrl(), key = _sbKey();
   if(url&&key){
     try{
-      const res = await fetch(url+'/rest/v1/tasktracker?id=eq.main&select=data,locked,locked_at', { headers: _sbHeaders() });
+      const res = await fetch(url+'/rest/v1/tasktracker?id=eq.main&select=data,locked,locked_at,updated_at', { headers: _sbHeaders() });
       if(res.ok){
         const rows = await res.json();
-        if(rows&&rows[0]&&rows[0].data){
-          const d = rows[0].data;
-          if(d.members)    members    = d.members;
-          if(d.dayoffs)    dayoffs    = d.dayoffs;
-          if(d.jobs)       jobs       = d.jobs;
-          if(d.tabCounter) tabCounter = d.tabCounter;
-          return;
+        if(rows&&rows[0]){
+          _lastUpdatedAt = rows[0].updated_at || '';
+          if (rows[0].data) {
+            const d = rows[0].data;
+            members    = d.members || [];
+            dayoffs    = d.dayoffs || [];
+            jobs       = d.jobs || [];
+            tabCounter = d.tabCounter || 0;
+            return;
+          }
         }
       }
     }catch(e){ console.warn('Supabase load failed',e); }
   }
-  // Fallback localStorage
   try{
     const raw = localStorage.getItem('tt_data_local');
     if(raw){
       const d = JSON.parse(raw);
-      if(d.members)    members    = d.members;
-      if(d.dayoffs)    dayoffs    = d.dayoffs;
-      if(d.jobs)       jobs       = d.jobs;
-      if(d.tabCounter) tabCounter = d.tabCounter;
+      members    = d.members || [];
+      dayoffs    = d.dayoffs || [];
+      jobs       = d.jobs || [];
+      tabCounter = d.tabCounter || 0;
     }
   }catch(e){}
 }
 
-// ── Manual save button ──
 async function manualSave(){
   const btn = document.getElementById('saveBtn');
   btn.textContent='⏳ Saving…'; btn.style.color='var(--amber)'; btn.style.borderColor='var(--amber)'; btn.disabled=true;
@@ -1509,8 +1472,6 @@ async function manualSave(){
   updateSaveBtn();
 }
 
-// ── Poll every 15s (only when not dirty) ──
-let _lastUpdatedAt = '';
 async function pollSupabase(){
   if(_isDirty) return;
   const url=_sbUrl(), key=_sbKey();
@@ -1522,24 +1483,21 @@ async function pollSupabase(){
     if(!rows||!rows[0]) return;
     const row = rows[0];
 
-    // Lock check
     const lockedAge = row.locked_at ? Date.now()-new Date(row.locked_at).getTime() : Infinity;
     setReadOnly(row.locked===true && lockedAge < LOCK_TTL);
 
-    // Data update check
     const remoteAt = row.updated_at||'';
-    if(remoteAt === _lastUpdatedAt) return;
+    if(remoteAt === _lastUpdatedAt) return; // Không có gì mới
+    
     _lastUpdatedAt = remoteAt;
     if(!row.data) return;
-    const current  = JSON.stringify({members,dayoffs,jobs,tabCounter});
-    const incoming = JSON.stringify({members:row.data.members,dayoffs:row.data.dayoffs,jobs:row.data.jobs,tabCounter:row.data.tabCounter});
-    if(current===incoming) return;
+    
     const d=row.data;
-    if(d.members)    members    = d.members;
-    if(d.dayoffs)    dayoffs    = d.dayoffs;
-    if(d.jobs)       jobs       = d.jobs;
-    if(d.tabCounter) tabCounter = d.tabCounter;
-    // Rebuild UI
+    members    = d.members || [];
+    dayoffs    = d.dayoffs || [];
+    jobs       = d.jobs || [];
+    tabCounter = d.tabCounter || 0;
+    
     document.querySelectorAll('.tab-panel[id^="tab-job"]').forEach(p=>p.remove());
     document.querySelectorAll('.tab-btn[data-tab^="job"]').forEach(b=>b.remove());
     jobs.forEach(job=>{
@@ -1555,7 +1513,10 @@ async function pollSupabase(){
     });
     buildArchiveList();
     rebuildMemberFilter();
-    renderOverview();
+    
+    if(document.getElementById('tab-overview').classList.contains('active')) renderOverview();
+    if(document.getElementById('tab-tasktoday').classList.contains('active')) renderTaskToday();
+    
     setSaveStatus('🔄 Updated from cloud','var(--purple)');
     setTimeout(()=>setSaveStatus('',''),3000);
   }catch(e){}
@@ -1621,7 +1582,6 @@ async function testConnection(){
 // ═══════════════════════════════════
 (async()=>{
   await loadData();
-  // Rebuild job tabs from saved data
   jobs.forEach(job=>{
     const tabsBar=document.getElementById('tabsBar');
     const addBtn=tabsBar.querySelector('.tab-add-btn');
