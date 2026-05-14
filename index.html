@@ -261,7 +261,8 @@ select.ci{cursor:pointer;color-scheme:dark}
       Dữ liệu lưu trên <strong style="color:var(--text)">Supabase</strong> — free, không rate limit, real-time.<br>
       <strong style="color:var(--amber)">Bước 1:</strong> Vào <a href="https://supabase.com" target="_blank" style="color:var(--accent)">supabase.com</a> → New project → SQL Editor → chạy:<br>
       <code style="background:var(--bg4);padding:4px 8px;border-radius:4px;font-size:11px;display:block;margin:6px 0;color:var(--green)">create table tasktracker (id text primary key default 'main', data jsonb, locked boolean default false, locked_at timestamptz, updated_at timestamptz default now());<br>insert into tasktracker (id) values ('main');</code>
-      <strong style="color:var(--amber)">Bước 2:</strong> Vào <strong style="color:var(--text)">Project Settings → API</strong> → copy <strong style="color:var(--text)">Project URL</strong> và <strong style="color:var(--text)">anon public key</strong>.<br>
+      <strong style="color:var(--amber)">Bước 2:</strong> Vào <strong style="color:var(--text)">Table Editor → tasktracker → RLS</strong> → <strong style="color:var(--red)">Disable RLS</strong> (quan trọng!).<br>
+      <strong style="color:var(--amber)">Bước 3:</strong> Vào <strong style="color:var(--text)">Project Settings → API</strong> → copy <strong style="color:var(--text)">Project URL</strong> và <strong style="color:var(--text)">anon public key</strong>.<br>
       <strong style="color:var(--green)">Bước 3:</strong> Điền vào bên dưới → Save & Connect.
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
@@ -642,8 +643,8 @@ function renderOverview(){
     const hrs   = mySTs.reduce((s,x)=>s+(parseFloat(x.hours)||0),0);
     const doHrs = from&&to?dayoffInRange(member.id,from,to):0;
     const free  = from&&to?calcFreeHours(member.id,from,to,hrs):0;
-    // OT = Booked - (weekdays*8) - DayOff
-    const _cap = (from&&to) ? (currentPeriod==='week'?40:countWeekdays(from,to)*8) : 0;
+    // OT = Booked - (weekdays Mon-Fri in period × 8) - DayOff
+    const _cap = (from&&to) ? countWeekdays(from,to)*8 : 0;
     const ot   = Math.max(0, hrs - _cap - doHrs);
     const earlier = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Earlier').length;
     const ontime  = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='On-time').length;
@@ -764,11 +765,19 @@ function renderTTCalendar(allST){
     // iterate each day in range that falls in this month
     let cur=new Date(Math.max(rangeStart,monthStart));
     const stop=new Date(Math.min(rangeEnd,monthEnd));
+    // startedDate and deadline strings for exact-day check
+    const sdStr=s.startedDate||s.receiveDate||'';
+    const diStr=s.deadlineInternal||'';
     while(cur<=stop){
       const key=`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
-      if(!byDate[key])byDate[key]=[];
-      // avoid duplicate if same task already added (shouldn't happen but safe)
-      if(!byDate[key].find(x=>x.id===s.id))byDate[key].push(s);
+      const dow=cur.getDay(); // 0=Sun,6=Sat
+      const isWeekend=(dow===0||dow===6);
+      const isExactDay=(key===sdStr||key===diStr);
+      // show on weekdays always; show on weekend only if it's exact start/deadline day
+      if(!isWeekend||isExactDay){
+        if(!byDate[key])byDate[key]=[];
+        if(!byDate[key].find(x=>x.id===s.id))byDate[key].push(s);
+      }
       cur.setDate(cur.getDate()+1);
     }
   });
@@ -1081,7 +1090,7 @@ function childRowHTML(jobId,motherId,child,idx){
         <option value="closed"     ${child.progress==='closed'?'selected':''}>Closed</option>
       </select>
     </td>
-    <td><button class="del-btn" onclick="removeChild('${motherId}','${child.id}')">✕</button></td>
+    <td><button class="del-btn" data-mid="${motherId}" data-cid="${child.id}" onclick="removeChild(this.dataset.mid,this.dataset.cid)">✕</button></td>
   </tr>`;
 }
 
@@ -1393,7 +1402,7 @@ function setSaveStatus(msg, color){
 }
 function _sbUrl()  { return SB_URL_DEFAULT  || localStorage.getItem('tt_sb_url')  || ''; }
 function _sbKey()  { return SB_KEY_DEFAULT  || localStorage.getItem('tt_sb_key')  || ''; }
-function _sbHeaders(){ return { 'Content-Type':'application/json', 'apikey':_sbKey(), 'Authorization':'Bearer '+_sbKey() }; }
+function _sbHeaders(extra){return Object.assign({'Content-Type':'application/json','apikey':_sbKey(),'Authorization':'Bearer '+_sbKey(),'Prefer':'return=minimal'},extra||{});}
 
 // ── Local save (instant, every change) ──
 function saveData(){ saveLocal(); }
@@ -1448,17 +1457,20 @@ async function _doSave(){
   if(!url||!key){ setSaveStatus('⚙️ Chưa cấu hình Supabase','var(--red)'); return; }
   setSaveStatus('Saving…','var(--amber)');
   try{
+    const body = JSON.stringify({data:{members,dayoffs,jobs,tabCounter},locked:false,locked_at:null,updated_at:new Date().toISOString()});
     const res = await fetch(url+'/rest/v1/tasktracker?id=eq.main', {
       method: 'PATCH',
       headers: _sbHeaders(),
-      body: JSON.stringify({ data:{members,dayoffs,jobs,tabCounter}, locked:false, locked_at:null, updated_at:new Date().toISOString() })
+      body
     });
-    if(res.ok){
+    if(res.status===204||res.status===200){
       setSaveStatus('Saved ✓','var(--green)');
       setTimeout(()=>setSaveStatus('',''),2000);
     } else {
-      const err = await res.json();
-      setSaveStatus('Save failed: '+(err.message||res.status),'var(--red)');
+      let errMsg=res.status;
+      try{ const e=await res.json(); errMsg=e.message||e.hint||res.status; }catch(ex){}
+      setSaveStatus('Save failed ('+errMsg+') — kiểm tra RLS Supabase','var(--red)');
+      console.warn('Supabase PATCH failed:',res.status,errMsg);
     }
   }catch(e){
     setSaveStatus('Save failed ✗','var(--red)');
@@ -1471,7 +1483,7 @@ async function loadData(){
   const url = _sbUrl(), key = _sbKey();
   if(url&&key){
     try{
-      const res = await fetch(url+'/rest/v1/tasktracker?id=eq.main&select=data,locked,locked_at', { headers: _sbHeaders() });
+      const res = await fetch(url+'/rest/v1/tasktracker?id=eq.main&select=data,locked,locked_at', { headers: _sbHeaders({'Prefer':'return=representation'}) });
       if(res.ok){
         const rows = await res.json();
         if(rows&&rows[0]&&rows[0].data){
@@ -1516,7 +1528,7 @@ async function pollSupabase(){
   const url=_sbUrl(), key=_sbKey();
   if(!url||!key) return;
   try{
-    const res = await fetch(url+'/rest/v1/tasktracker?id=eq.main&select=data,locked,locked_at,updated_at', { headers:_sbHeaders() });
+    const res = await fetch(url+'/rest/v1/tasktracker?id=eq.main&select=data,locked,locked_at,updated_at', { headers:_sbHeaders({'Prefer':'return=representation'}) });
     if(!res.ok) return;
     const rows = await res.json();
     if(!rows||!rows[0]) return;
