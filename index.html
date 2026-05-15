@@ -349,6 +349,15 @@ select.ci{cursor:pointer;color-scheme:dark}
         <tbody id="overviewBody"></tbody>
       </table>
     </div>
+
+    <!-- Project Summary Table -->
+    <div style="margin-top:28px">
+      <div style="font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">📋 Project Summary</div>
+      <div class="ov-wrap"><table class="ov-table" id="projectSummaryTable">
+        <thead id="projectSummaryHead"></thead>
+        <tbody id="projectSummaryBody"></tbody>
+      </table></div>
+    </div>
   </div>
 
   <!-- TASK TODAY -->
@@ -536,9 +545,13 @@ function removeDayoff(id){dayoffs=dayoffs.filter(x=>x.id!==id);renderDayoffConte
 
 // Day-off hours for a member in a date range
 function dayoffInRange(memberId,from,to){
+  if(!from||!to) return 0;
   return dayoffs
     .filter(d=>d.memberId===memberId&&d.date&&d.hours)
-    .filter(d=>{const dt=new Date(d.date);return dt>=from&&dt<=to})
+    .filter(d=>{
+      const dt=parseLD(d.date);
+      return dt&&dt>=from&&dt<=to;
+    })
     .reduce((s,d)=>s+(parseFloat(d.hours)||0),0);
 }
 
@@ -583,7 +596,7 @@ function calcBookedInRange(subtasks, from, to){
     const overlapDays = countWeekdays(overlapStart, overlapEnd);
     total += dailyRate * overlapDays;
   });
-  return Math.round(total * 10) / 10; // round to 1 decimal
+  return parseFloat((Math.round(total * 10) / 10).toFixed(1));
 }
 
 function renderOverview(){
@@ -625,12 +638,12 @@ function renderOverview(){
   const stFiltered = mf!=='all' ? stInRange.filter(s=>s.assignee===mf) : stInRange;
 
   // Totals: tasks = sub-tasks count; hours = sum of sub-task hours; rating from sub-tasks
-  let tt=stFiltered.length, tHrs=0, tE=0, tO=0, tL=0;
+  let tt=stFiltered.length, tE=0, tO=0, tL=0;
   stFiltered.forEach(s=>{
-    tHrs+=parseFloat(s.hours)||0;
     const r=calcRating(s.deadlineInternal,s.deadlineAccount);
     if(r==='Earlier')tE++;else if(r==='On-time')tO++;else if(r==='Late')tL++;
   });
+  const tHrs=(from&&to)?parseFloat(calcBookedInRange(stFiltered,from,to).toFixed(1)):stFiltered.reduce((s,x)=>s+(parseFloat(x.hours)||0),0);
 
   document.getElementById('summarycards').innerHTML=`
     <div class="summary-card"><div class="lbl">Total tasks</div><div class="val" style="color:var(--accent)">${tt}</div></div>
@@ -666,7 +679,7 @@ function renderOverview(){
     const free  = from&&to?calcFreeHours(member.id,from,to,hrs):0;
     // OT = Booked - (weekdays Mon-Fri in period × 8) - DayOff
     const _cap = (from&&to) ? countWeekdays(from,to)*8 : 0;
-    const ot   = Math.max(0, hrs - _cap - doHrs);
+    const ot   = parseFloat(Math.max(0, hrs - _cap - doHrs).toFixed(1));
     const earlier = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Earlier').length;
     const ontime  = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='On-time').length;
     const late    = mySTs.filter(s=>calcRating(s.deadlineInternal,s.deadlineAccount)==='Late').length;
@@ -691,6 +704,55 @@ function renderOverview(){
       <td><span class="badge bg-amber">${ontime}</span></td>
       <td><span class="badge bg-red">${late}</span></td>
     </tr>`;
+  }).join('');
+  renderProjectSummary(from, to, mf, allC, stInRange);
+}
+
+function renderProjectSummary(from, to, mf, allC, stInRange){
+  const head = document.getElementById('projectSummaryHead');
+  const body = document.getElementById('projectSummaryBody');
+  if(!head||!body) return;
+  const FMTS = ['Key Visual','Single','Multi','Video','Others'];
+  head.innerHTML = '<tr>'
+    +'<th>Project</th><th>Total Hours</th>'
+    +FMTS.map(f=>'<th style="background:var(--bg4);font-size:10px">'+f+'</th>').join('')
+    +'</tr>';
+
+  // Collect all jobs that have subtasks in range (filtered by member if selected)
+  const jobRows = [];
+  jobs.forEach(job=>{
+    // subtasks in range for this job
+    let jobSTs = stInRange.filter(s=>s.jobId===job.id);
+    if(mf!=='all') jobSTs = jobSTs.filter(s=>s.assignee===mf);
+    if(!jobSTs.length) return;
+    // total hours booked
+    const totalHrs = parseFloat(((from&&to)?calcBookedInRange(jobSTs,from,to):jobSTs.reduce((s,x)=>s+(parseFloat(x.hours)||0),0)).toFixed(1));
+    // format counts: done sub-jobs in this job
+    // for all members: all done subjobs in job
+    // for specific member: done subjobs where assignee = member
+    const fc={};
+    FMTS.forEach(f=>{
+      fc[f]=allC.filter(c=>{
+        if(c.jobId!==job.id) return false;
+        if(c.progress!=='done') return false;
+        if(c.format!==f) return false;
+        if(mf!=='all'&&c.assignee!==mf) return false;
+        return true;
+      }).length;
+    });
+    jobRows.push({name:job.tabTitle, totalHrs, fc});
+  });
+
+  if(!jobRows.length){
+    body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">No project data for this period.</td></tr>';
+    return;
+  }
+  body.innerHTML=jobRows.map(r=>{
+    return '<tr>'
+      +'<td style="font-weight:500">'+r.name+'</td>'
+      +'<td style="font-family:var(--mono);font-size:12px;color:var(--accent)">'+r.totalHrs+' hrs</td>'
+      +FMTS.map(f=>'<td style="text-align:center;font-family:var(--mono);font-size:12px;color:'+(r.fc[f]?'var(--text)':'var(--text3)')+'">'+( r.fc[f]||'—')+'</td>').join('')
+      +'</tr>';
   }).join('');
 }
 
@@ -1045,7 +1107,7 @@ function saveDesc(jobId){
 
 // Mother
 function motherHTML(jobId,mother){
-  return`<div class="job-mother" id="mother-${mother.id}">
+  return`<div class="job-mother collapsed" id="mother-${mother.id}">
     <div class="job-mother-header">
       <span class="chevron" onclick="toggleMother('${mother.id}')">▾</span>
       <input class="job-mother-name" value="${mother.name}" oninput="updateMotherName('${mother.id}',this.value)" placeholder="Parent job name…">
@@ -1118,7 +1180,7 @@ function childRowHTML(jobId,motherId,child,idx){
         <option value="closed"     ${child.progress==='closed'?'selected':''}>Closed</option>
       </select>
     </td>
-    <td><button class="del-btn" data-mid="${motherId}" data-cid="${child.id}" onclick="removeChild(this.dataset.mid,this.dataset.cid)">✕</button></td>
+    <td><button class="del-btn" onclick="handleDelChild(this)" data-mid="${motherId}" data-cid="${child.id}">✕</button></td>
   </tr>`;
 }
 
@@ -1290,6 +1352,12 @@ function addChild(jid,mid){
     if(countEl)countEl.textContent=m.children.length+' tasks';
     saveData();
   });
+}
+function handleDelChild(btn){
+  const mid=btn.getAttribute('data-mid');
+  const cid=btn.getAttribute('data-cid');
+  if(!mid||!cid){console.error('handleDelChild: missing mid/cid',mid,cid);return;}
+  removeChild(mid,cid);
 }
 function removeChild(mid,cid){
   jobs.forEach(j=>{
