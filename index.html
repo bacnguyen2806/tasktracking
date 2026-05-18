@@ -30,8 +30,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .manage-btn:hover{background:var(--bg3);color:var(--text)}
 
 /* TABS */
-.tabs-bar{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;user-select:none;position:sticky;top:52px;z-index:90}
-.tabs-bar::-webkit-scrollbar{display:none}
+.tabs-bar{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;user-select:none;position:sticky;top:52px;z-index:90}
+.tabs-bar::-webkit-scrollbar{height:4px}.tabs-bar::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 .tab-btn{background:none;border:none;cursor:pointer;color:var(--text2);padding:11px 14px;font-family:var(--font);font-size:13px;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap;transition:color .15s;display:flex;align-items:center;gap:6px;flex-shrink:0}
 .tab-btn:hover{color:var(--text)}
 .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
@@ -114,7 +114,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .status-select.st-inprogress{background:#0d1a35;color:#5b8af4;border-color:#5b8af4}
 .status-select.st-closed{background:var(--red-bg);color:var(--red);border-color:var(--red)}
 .desc-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
-.desc-rendered{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:9px 13px;font-size:13px;line-height:1.7;min-height:40px;cursor:text;color:var(--text);word-break:break-word;margin-bottom:16px}
+.desc-rendered{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:9px 13px;font-size:13px;line-height:1.7;min-height:40px;cursor:text;color:var(--text);word-break:break-word;margin-bottom:16px;white-space:pre-wrap}
 .desc-rendered a{color:var(--accent);text-decoration:underline;word-break:break-all}
 .desc-rendered a:hover{color:var(--purple)}
 .desc-rendered:empty::before{content:'Click to add description…';color:var(--text3)}
@@ -166,7 +166,7 @@ select.ci{cursor:pointer;color-scheme:dark}
 .st-hdr{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px;display:flex;align-items:center;gap:8px}
 .st-row{display:flex;align-items:center;gap:7px;padding:3px 0;border-bottom:1px solid var(--border)}
 .st-row:last-of-type{border-bottom:none}
-.st-name{flex:1;background:none;border:none;color:var(--text);font-family:var(--font);font-size:12px;outline:none;padding:2px 4px;border-radius:3px}
+.st-name{flex:1;background:none;border:none;color:var(--text);font-family:var(--font);font-size:12px;outline:none;padding:2px 4px;border-radius:3px;word-break:break-word;white-space:normal}
 .st-name:hover{background:var(--bg3)}
 .st-name:focus{background:var(--bg4)}
 .add-st-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;padding:2px 5px;border-radius:3px;font-family:var(--font);transition:color .15s}
@@ -216,7 +216,26 @@ select.ci{cursor:pointer;color-scheme:dark}
 .tt-indent2{padding-left:56px}
 .tt-empty{color:var(--text3);font-size:13px;padding:4px 0}
 
-@media(max-width:768px){.main{padding:16px}.summary-cards{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:768px){
+  .main{padding:12px}
+  .summary-cards{grid-template-columns:repeat(2,1fr)}
+  .header{padding:0 12px;height:48px}
+  .manage-btn{padding:5px 8px;font-size:11px}
+  .ov-wrap{overflow-x:auto}
+  .ov-table{min-width:600px}
+  .child-table{min-width:500px}
+  .job-panel-top{flex-direction:column;align-items:flex-start}
+  #ttGrid{grid-template-columns:1fr!important}
+  .modal{width:94vw!important;padding:16px}
+  .filter-group{flex-wrap:wrap}
+  .overview-controls{gap:8px}
+}
+@media(max-width:480px){
+  .summary-cards{grid-template-columns:1fr 1fr}
+  .logo{font-size:13px}
+  .tab-btn{padding:10px 10px;font-size:12px}
+  .manage-btn span{display:none}
+}
 </style>
 </head>
 <body>
@@ -295,7 +314,7 @@ select.ci{cursor:pointer;color-scheme:dark}
   <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview',this)">📊 Overview</button>
   <button class="tab-btn" data-tab="tasktoday" onclick="switchTab('tasktoday',this)">📅 Calendar</button>
   <div class="archive-tab-wrap" id="archiveWrap">
-    <button class="archive-btn" id="archiveBtn" onclick="toggleArchiveDropdown()">…</button>
+    <button class="archive-btn" id="archiveBtn">…</button>
     <div class="archive-dropdown" id="archiveDropdown"></div>
   </div>
   <button class="tab-add-btn" onclick="addJobTab()" title="Add new job">＋</button>
@@ -546,13 +565,14 @@ function removeDayoff(id){dayoffs=dayoffs.filter(x=>x.id!==id);renderDayoffConte
 // Day-off hours for a member in a date range
 function dayoffInRange(memberId,from,to){
   if(!from||!to) return 0;
-  return dayoffs
+  return parseFloat(dayoffs
     .filter(d=>d.memberId===memberId&&d.date&&d.hours)
     .filter(d=>{
       const dt=parseLD(d.date);
       return dt&&dt>=from&&dt<=to;
     })
-    .reduce((s,d)=>s+(parseFloat(d.hours)||0),0);
+    .reduce((s,d)=>s+(parseFloat(d.hours)||0),0)
+  .toFixed(1));
 }
 
 // ═══════════════════════════════════
@@ -676,7 +696,7 @@ function renderOverview(){
     // Booked = proportional hours of each subtask that falls in period
     const hrs = (from&&to) ? calcBookedInRange(mySTs,from,to) : mySTs.reduce((s,x)=>s+(parseFloat(x.hours)||0),0);
     const doHrs = from&&to?dayoffInRange(member.id,from,to):0;
-    const free  = from&&to?calcFreeHours(member.id,from,to,hrs):0;
+    const free  = from&&to?parseFloat(calcFreeHours(member.id,from,to,hrs).toFixed(1)):0;
     // OT = Booked - (weekdays Mon-Fri in period × 8) - DayOff
     const _cap = (from&&to) ? countWeekdays(from,to)*8 : 0;
     const ot   = parseFloat(Math.max(0, hrs - _cap - doHrs).toFixed(1));
@@ -939,6 +959,9 @@ function switchTab(id,btn){
   if(id==='overview')renderOverview();
   if(id==='tasktoday')renderTaskToday();
   closeArchiveDropdown();
+  archiveCurrentJobId=null;
+  const ab=document.getElementById('archiveBtn');
+  if(ab){ab.style.color='';ab.style.borderBottom='';}
 }
 
 function addJobTab(title){
@@ -1010,49 +1033,62 @@ function buildArchiveList(){
   const closed=jobs.filter(j=>j.status==='closed');
   const btn=document.getElementById('archiveBtn');
   btn.classList.toggle('has-closed',closed.length>0);
-  // Remove tab buttons for closed jobs from bar (keep panel in DOM)
   jobs.forEach(j=>{
     const tabBtn=document.querySelector(`[data-tab="${j.id}"]`);
     if(!tabBtn)return;
-    if(j.status==='closed'){tabBtn.style.display='none';}
-    else{tabBtn.style.display='';}
+    tabBtn.style.display=(j.status==='closed')?'none':'';
   });
+  // Keep showing closed job panel if user is viewing one
+  if(archiveCurrentJobId){
+    const panel=document.getElementById('tab-'+archiveCurrentJobId);
+    const job=jobs.find(j=>j.id===archiveCurrentJobId);
+    if(panel&&job&&job.status==='closed')panel.classList.add('active');
+  }
 }
 
 function toggleArchiveDropdown(){
   const dd=document.getElementById('archiveDropdown');
-  if(dd.classList.contains('open')){closeArchiveDropdown();return;}
-  renderArchiveDropdown();
-  dd.classList.add('open');
-  // close on outside click — defer so this click doesn't immediately close it
-  setTimeout(()=>document.addEventListener('click',archiveOutsideClick,{once:true}),0);
-}
-function closeArchiveDropdown(){document.getElementById('archiveDropdown').classList.remove('open')}
-function archiveOutsideClick(e){
-  if(!document.getElementById('archiveWrap').contains(e.target))closeArchiveDropdown();
-}
-
-function renderArchiveDropdown(){
+  const isOpen=dd.classList.contains('open');
+  dd.classList.remove('open');
+  document.removeEventListener('click',_archiveOutside);
+  if(isOpen) return;
+  // Build list
   const closed=jobs.filter(j=>j.status==='closed');
-  const dd=document.getElementById('archiveDropdown');
   if(!closed.length){
-    dd.innerHTML='<div class="archive-empty">No closed jobs</div>';return;
+    dd.innerHTML='<div class="archive-empty">No closed jobs yet</div>';
+  } else {
+    dd.innerHTML=closed.map(j=>`<div class="archive-item" data-jid="${j.id}"><div class="dot"></div>${j.tabTitle}</div>`).join('');
+    dd.querySelectorAll('.archive-item').forEach(el=>{
+      el.addEventListener('click',function(ev){
+        ev.stopPropagation();
+        openClosedJob(this.dataset.jid);
+      });
+    });
   }
-  dd.innerHTML=closed.map(j=>`
-    <div class="archive-item" onclick="openClosedJob('${j.id}')">
-      <div class="dot"></div>${j.tabTitle}
-    </div>`).join('');
+  dd.classList.add('open');
+  setTimeout(()=>document.addEventListener('click',_archiveOutside),0);
+}
+function _archiveOutside(e){
+  if(!document.getElementById('archiveWrap').contains(e.target)){
+    document.getElementById('archiveDropdown').classList.remove('open');
+    document.removeEventListener('click',_archiveOutside);
+  }
+}
+function closeArchiveDropdown(){
+  document.getElementById('archiveDropdown').classList.remove('open');
+  document.removeEventListener('click',_archiveOutside);
 }
 
 function openClosedJob(jobId){
   closeArchiveDropdown();
-  // Show this job's panel but keep "…" as the active tab button
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('archiveBtn').style.color='var(--accent)';
+  document.querySelectorAll('.tab-btn[data-tab]').forEach(b=>b.classList.remove('active'));
   const panel=document.getElementById('tab-'+jobId);
-  if(panel)panel.classList.add('active');
+  if(!panel){console.warn('panel not found:',jobId);return;}
+  panel.classList.add('active');
   archiveCurrentJobId=jobId;
+  const ab=document.getElementById('archiveBtn');
+  if(ab){ab.style.color='var(--accent)';ab.style.borderBottom='2px solid var(--accent)';}
 }
 
 // ═══════════════════════════════════
@@ -1729,6 +1765,7 @@ async function testConnection(){
 // ═══════════════════════════════════
 (async()=>{
   await loadData();
+
   // Rebuild job tabs from saved data
   jobs.forEach(job=>{
     const tabsBar=document.getElementById('tabsBar');
@@ -1744,6 +1781,7 @@ async function testConnection(){
   buildArchiveList();
   rebuildMemberFilter();
   renderOverview();
+  document.getElementById('archiveBtn').addEventListener('click',function(e){e.stopPropagation();toggleArchiveDropdown();});
 })();
 </script>
 </body>
