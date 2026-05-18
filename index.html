@@ -313,10 +313,7 @@ select.ci{cursor:pointer;color-scheme:dark}
 <div class="tabs-bar" id="tabsBar">
   <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview',this)">📊 Overview</button>
   <button class="tab-btn" data-tab="tasktoday" onclick="switchTab('tasktoday',this)">📅 Calendar</button>
-  <div class="archive-tab-wrap" id="archiveWrap">
-    <button class="archive-btn" id="archiveBtn">…</button>
-    <div class="archive-dropdown" id="archiveDropdown"></div>
-  </div>
+  <select id="closedProjectSelect" onchange="openClosedProject(this.value)" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text2);font-family:var(--font);font-size:12px;padding:6px 10px;cursor:pointer;outline:none;color-scheme:dark;align-self:center;margin:0 4px;max-width:160px"><option value="">📁 Closed Projects</option></select>
   <button class="tab-add-btn" onclick="addJobTab()" title="Add new job">＋</button>
 </div>
 
@@ -958,10 +955,9 @@ function switchTab(id,btn){
   if(btn)btn.classList.add('active');
   if(id==='overview')renderOverview();
   if(id==='tasktoday')renderTaskToday();
-  closeArchiveDropdown();
   archiveCurrentJobId=null;
-  const ab=document.getElementById('archiveBtn');
-  if(ab){ab.style.color='';ab.style.borderBottom='';}
+  const csel=document.getElementById('closedProjectSelect');
+  if(csel) csel.value='';
 }
 
 function addJobTab(title){
@@ -1029,21 +1025,34 @@ function removeJobTab(id,e){
 }
 
 // ── Archive / "…" tab ──
-function buildArchiveList(){
+function buildClosedSelect(){
+  const sel=document.getElementById('closedProjectSelect');
+  if(!sel) return;
   const closed=jobs.filter(j=>j.status==='closed');
-  const btn=document.getElementById('archiveBtn');
-  btn.classList.toggle('has-closed',closed.length>0);
+  sel.style.display=closed.length?'':'none';
+  const prev=sel.value;
+  sel.innerHTML='<option value="">📁 Closed Projects</option>'+
+    closed.map(j=>'<option value="'+j.id+'">'+j.tabTitle+'</option>').join('');
+  if(prev && closed.find(j=>j.id===prev)) sel.value=prev;
+}
+
+function openClosedProject(jobId){
+  if(!jobId) return;
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn[data-tab]').forEach(b=>b.classList.remove('active'));
+  const panel=document.getElementById('tab-'+jobId);
+  if(!panel) return;
+  panel.classList.add('active');
+  archiveCurrentJobId=jobId;
+}
+
+function buildArchiveList(){
   jobs.forEach(j=>{
-    const tabBtn=document.querySelector(`[data-tab="${j.id}"]`);
-    if(!tabBtn)return;
+    const tabBtn=document.querySelector('[data-tab="'+j.id+'"]');
+    if(!tabBtn) return;
     tabBtn.style.display=(j.status==='closed')?'none':'';
   });
-  // Keep showing closed job panel if user is viewing one
-  if(archiveCurrentJobId){
-    const panel=document.getElementById('tab-'+archiveCurrentJobId);
-    const job=jobs.find(j=>j.id===archiveCurrentJobId);
-    if(panel&&job&&job.status==='closed')panel.classList.add('active');
-  }
+  buildClosedSelect();
 }
 
 function toggleArchiveDropdown(){
@@ -1087,8 +1096,6 @@ function openClosedJob(jobId){
   if(!panel){console.warn('panel not found:',jobId);return;}
   panel.classList.add('active');
   archiveCurrentJobId=jobId;
-  const ab=document.getElementById('archiveBtn');
-  if(ab){ab.style.color='var(--accent)';ab.style.borderBottom='2px solid var(--accent)';}
 }
 
 // ═══════════════════════════════════
@@ -1122,11 +1129,20 @@ function setJobStatus(jobId,val){
   job.status=val;
   const sel=document.getElementById('jstatus-'+jobId);
   if(sel)sel.className='status-select'+(val==='inprogress'?' st-inprogress':val==='closed'?' st-closed':'');
+  if(val==='closed'){
+    const isActive=document.getElementById('tab-'+jobId)?.classList.contains('active');
+    if(isActive) switchTab('overview',document.querySelector('[data-tab="overview"]'));
+  } else {
+    if(archiveCurrentJobId===jobId){
+      archiveCurrentJobId=null;
+      const btn=document.querySelector('[data-tab="'+jobId+'"]');
+      setTimeout(()=>switchTab(jobId,btn),0);
+    }
+  }
   buildArchiveList();
   saveDataNow();
-  // update tab label colour
-  const tabBtn=document.querySelector(`[data-tab="${jobId}"] .tab-label`);
-  if(tabBtn){tabBtn.style.color=val==='closed'?'var(--red)':val==='inprogress'?'var(--accent)':''}
+  const tabLbl=document.querySelector('[data-tab="'+jobId+'"] .tab-label');
+  if(tabLbl){tabLbl.style.color=val==='closed'?'var(--red)':val==='inprogress'?'var(--accent)':''}
 }
 
 // Description
@@ -1781,7 +1797,6 @@ async function testConnection(){
   buildArchiveList();
   rebuildMemberFilter();
   renderOverview();
-  document.getElementById('archiveBtn').addEventListener('click',function(e){e.stopPropagation();toggleArchiveDropdown();});
 })();
 </script>
 </body>
